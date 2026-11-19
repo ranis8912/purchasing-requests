@@ -178,9 +178,9 @@ Streamlit is fine for single-user analysis tools. For anything with several page
 - The deploy script runs tests, builds the frontend, packages, deploys, and polls. **Never deploy a frontend change without rebuilding.** *Why: AIS shipped a fix to source but not to `dist`, so production ran old code.* Don't commit build output; the script always rebuilds it.
 - **Build the zip with `scripts/package.py` or `git -c core.autocrlf=false archive`. Never use PowerShell `Compress-Archive`** for nested folders. *Why: it writes backslash paths and Linux extraction fails.*
 - **`*.sh` files keep LF endings** (`.gitattributes`). *Why: a CRLF `startup.sh` gives "not found", exit 127, and a 503.*
-- Startup command: `bash /home/site/wwwroot/startup.sh`. The script reuses a venv on `/home` keyed by a hash of `requirements.txt`, so restarts are fast. Set `SCM_DO_BUILD_DURING_DEPLOYMENT=false`. *Why: the Oryx build hung for more than 15 minutes on the ASE.*
+- Startup command: `bash /home/site/wwwroot/startup.sh`. **Bundle Python packages in the zip** (`pip install --target packages --platform manylinux… --python-version 3.12 --only-binary=:all:` in `scripts/package.py`) and set `PYTHONPATH` in startup.sh, so nothing installs at boot. Set `SCM_DO_BUILD_DURING_DEPLOYMENT=false`. *Why: the Oryx build hung for more than 15 minutes on the shared AIS plan, and the Purchasing portal's first boot ran `pip install` into a venv on `/home` (an SMB share) past the 230-second startup limit, so the container was killed ("ContainerTimeout").*
 - Check `linuxFxVersion` is `PYTHON|3.12`. *Why: a blank value made Kudu treat the app as PHP.*
-- Use `az webapp deploy --type zip --async true`, then poll `https://<scm>/api/deployments/latest` (status 4 = success). The synchronous client hangs or returns 502.
+- Use `az webapp deploy --type zip --async true --track-status false`, then poll `https://<scm>/api/deployments/latest` (status 4 = success). The synchronous client hangs or returns 502.
 - After repeated failed boots, the platform stops the container even though the portal says Running. **Restart after deploying a fix.**
 - Scripts must not change the global `az` subscription. Pass `--subscription` instead.
 - `az.cmd` runs through cmd.exe and splits on `&`. Pass settings that contain `&` or parentheses with `--settings @file.json`.

@@ -49,7 +49,8 @@ $zip = Join-Path $env:TEMP "purreq-$(Get-Date -Format yyyyMMdd-HHmmss).zip"
 & "$root/backend/.venv/Scripts/python" "$root/scripts/package.py" $zip; Check "package.py"
 
 Step "Deploying (async; then polling status)"
-az webapp deploy @sub -g $ResourceGroup -n $AppName --src-path $zip --type zip --async true --restart true | Out-Null
+# --track-status false: otherwise az waits on a site-status poll that never returns over the private endpoint.
+az webapp deploy @sub -g $ResourceGroup -n $AppName --src-path $zip --type zip --async true --track-status false --restart true | Out-Null
 Check "az webapp deploy"
 
 # The deploy client can hang or report 502 while Kudu finishes, so poll Kudu's deployment record instead.
@@ -64,5 +65,5 @@ if ($status -ne "4") { throw "Deployment did not succeed (status '$status'). See
 
 Remove-Item $zip -ErrorAction SilentlyContinue
 Step "Done"
-Write-Host "Deployed. The first start after a requirements change installs packages (about a minute of 503 is normal)."
-Write-Host "Check in a browser (InPrivate recommended): https://$AppName.azurewebsites.net  then hard-refresh with Ctrl+Shift+R."
+Write-Host "Deployed. Expect about a minute of 503 while the container restarts."
+Write-Host "Check in a browser (InPrivate recommended): https://dv-gespurchasingrequests.ges.com  then hard-refresh with Ctrl+Shift+R."

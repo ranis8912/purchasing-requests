@@ -51,7 +51,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\deploy.ps1 -Subscription <GES-AI
 
 The script runs the tests, builds the frontend into `backend/static`, packages a Linux-safe zip, deploys it with `az webapp deploy`, and waits for Kudu to report success. It deploys code only and doesn't change app settings.
 
-After deploying, open https://dv-gespurchasingrequests.ges.com in an InPrivate window and hard-refresh. The first start after a `requirements.txt` change installs packages, so about a minute of 503 is normal.
+After deploying, open https://dv-gespurchasingrequests.ges.com in an InPrivate window and hard-refresh. Python packages are bundled into the zip as Linux wheels, so nothing is installed at boot. Expect about a minute of 503 while the container restarts.
 
 ## One-time environment setup (infra)
 
@@ -87,7 +87,7 @@ After deploying, open https://dv-gespurchasingrequests.ges.com in an InPrivate w
 | `SP_SITE_URL` | e.g. `https://<tenant>.sharepoint.com/sites/<Purchasing site>` |
 | `SP_LISTS_PATH` | Path in the site's Documents library, e.g. `PO Intake/PO Intake Lists.xlsx` |
 | `BLOB_ACCOUNT_URL` | `https://<storage account>.blob.core.windows.net` |
-| `SCM_DO_BUILD_DURING_DEPLOYMENT` | `false` (startup.sh installs packages) |
+| `SCM_DO_BUILD_DURING_DEPLOYMENT` | `false` (packages are bundled in the zip) |
 
 There must be no `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` / `AZURE_TENANT_ID` settings, because they override the managed identity.
 
