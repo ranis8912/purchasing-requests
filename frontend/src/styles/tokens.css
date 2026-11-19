@@ -1,0 +1,61 @@
+/*
+ * GES design tokens. The only place raw colours live; components use the variables.
+ * Brand colours come from the GES palette used on the AIS Dashboard.
+ */
+:root {
+  /* Brand */
+  --ges-navy-900: #0c2536;
+  --ges-navy-800: #063c59;
+  --ges-navy-700: #0a4a6e;
+  --ges-navy-600: #0e5278;
+  --ges-teal: #7dc3cd;
+  --ges-lime: #c3d735;
+  --ges-orange: #e27124;
+  --ges-gold: #f7bc55;
+  --ges-grey: #cdd0d0;
+
+  /* Surfaces & ink */
+  --bg: #f3f5f8;
+  --surface: #ffffff;
+  --surface-2: #f7f9fb;
+  --border: #e3e7ee;
+  --border-strong: #cfd6e0;
+  --text: #13202e;
+  --text-2: #4a5768;
+  --text-3: #6b7686;
+
+  /* Actions */
+  --primary: #0067b1;
+  --primary-hover: #00538f;
+  --primary-soft: #e6f0f8;
+  --focus: 0 0 0 3px rgba(0, 103, 177, 0.28);
+
+  /* Data viz (validated: categorical pair passes CVD/contrast checks on white) */
+  --viz-1: #1d6fb8;
+  --viz-2: #e27124;
+  --viz-grid: #e9edf2;
+
+  /* Status (always paired with an icon + label) */
+  --ok: #16794a;
+  --ok-bg: #e5f5ec;
+  --warn: #8a5a00;
+  --warn-bg: #fff4d6;
+  --info: #0b5c96;
+  --info-bg: #e6f0f8;
+  --danger: #b3261e;
+  --danger-bg: #fde8e7;
+  --neutral: #4a5768;
+  --neutral-bg: #eef1f5;
+
+  /* Shape & type */
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --shadow-sm: 0 1px 2px rgba(16, 32, 48, 0.06);
+  --shadow: 0 1px 3px rgba(16, 32, 48, 0.06), 0 4px 14px rgba(16, 32, 48, 0.06);
+  --shadow-lg: 0 10px 30px rgba(12, 37, 54, 0.18);
+  --font: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
+  --header-h: 64px;
+  --content-w: 1280px;
+}

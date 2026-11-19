@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Local data and secrets
+backend/.env
+backend/data/
+*.db
+
+# Frontend
+frontend/node_modules/
+
+# Build output (rebuilt by deploy.ps1)
+backend/static/
+dist/
+*.zip
+*.tsbuildinfo

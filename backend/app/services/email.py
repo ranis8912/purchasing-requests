@@ -1,0 +1,135 @@
+"""Submission email via Graph: one message From/To the PO shared mailbox, CC + Reply-To the requester.
+
+Graph's sendMail takes a ~4 MB request, so:
+- attachments under 3 MB in total: one sendMail call (needs only the Mail.Send permission)
+- larger: create a draft, attach big files through an upload session, then send it
+  (needs Mail.ReadWrite as well, scoped to the PO mailbox by the same Exchange access policy)
+"""
+import base64
+import html
+import logging
+from datetime import datetime, timezone
+from pathlib import Path
+
+import requests
+
+from ..config import get_settings
+from ..models import PurchaseRequest
+from . import graph, storage
+
+log = logging.getLogger(__name__)
+INLINE_LIMIT = 3 * 1024 * 1024
+CHUNK = 4 * 1024 * 1024  # Outlook upload sessions accept up to 4 MB per PUT
+
+
+def money(amount: float, currency: str) -> str:
+    return f"${amount:,.0f}" if currency == "USD" else f"{amount:,.0f} {currency}"
+
+
+def subject_for(r: PurchaseRequest) -> str:
+    parts = [f"[{r.request_number}] {r.request_type}", r.vendor_name, f"Job {r.job_number}",
+             f"CC {r.cost_center}", r.expense_class, money(r.amount, r.currency)]
+    return " – ".join(parts)
+
+
+def body_for(r: PurchaseRequest) -> str:
+    s = get_settings()
+    link = f"{s.app_base_url.rstrip('/')}/requests/{r.request_number}"
+    yes_no = lambda b: "Yes" if b else "No"  # noqa: E731
+    rows = [
+        ("Requester", f"{r.requester_name} <{r.requester_email}>"),
+        ("Department", r.department),
+        ("Request type", r.request_type),
+        ("Title", r.title),
+        ("Job number", f"{r.job_number} – {r.job_description or ''}"),
+        ("Cost center", f"{r.cost_center} – {r.cost_center_name or ''}"),
+        ("Vendor", f"{r.vendor_name}{' (NEW VENDOR)' if r.is_new_vendor else ''}"),
+        ("Vendor category", r.vendor_category),
+        ("Vendor contact", " / ".join(x for x in [r.vendor_contact_name, r.vendor_contact_email] if x)),
+        ("OpEx / CapEx", r.expense_class + (f" – Project {r.capex_project_number}" if r.capex_project_number else "")),
+        ("Expense type", r.expense_type),
+        ("Amount", money(r.amount, r.currency)),
+        ("Billing", r.billing_type),
+        ("Term", f"{r.start_date or '—'} to {r.end_date or '—'}" if r.start_date or r.end_date else None),
+        ("Needed by", r.needed_by),
+        ("Budgeted", yes_no(r.is_budgeted)),
+        ("NDA in place", yes_no(r.nda_in_place)),
+        ("Vendor accesses GES data/systems", yes_no(r.vendor_data_access)),
+    ]
+
+    trs = "".join(
+        f'<tr><td style="padding:6px 12px;background:#f4f6f9;font-weight:600;width:220px;border-bottom:1px solid #e3e7ee">'
+        f'{html.escape(k)}</td><td style="padding:6px 12px;border-bottom:1px solid #e3e7ee">{html.escape(str(v))}</td></tr>'
+        for k, v in rows if v not in (None, "")
+    )
+    files = "".join(f"<li>{html.escape(a.file_name)}</li>" for a in r.attachments)
+    return f"""<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#1b2430">
+<div style="background:#0b2341;color:#fff;padding:14px 18px;font-size:18px;font-weight:600">
+New purchasing request {html.escape(r.request_number)}</div>
+<table style="border-collapse:collapse;width:100%;max-width:760px;margin-top:12px">{trs}</table>
+<h3 style="margin:18px 0 6px">Description / business justification</h3>
+<div style="white-space:pre-wrap;max-width:760px">{html.escape(r.description)}</div>
+<h3 style="margin:18px 0 6px">Attachments</h3><ul>{files}</ul>
+<p><a href="{html.escape(link)}" style="background:#0067b1;color:#fff;padding:8px 16px;text-decoration:none;border-radius:4px">
+Open request in the Purchasing Request portal</a></p>
+<p style="color:#6b7686;font-size:12px">Reply to this email to reach the requester directly.</p></div>"""
+
+
+def _attach(mailbox: str, message_id: str, name: str, data: bytes) -> None:
+    base = f"/users/{mailbox}/messages/{message_id}/attachments"
+    if len(data) < INLINE_LIMIT:
+        graph.call("POST", base, json={
+            "@odata.type": "#microsoft.graph.fileAttachment", "name": name,
+            "contentType": "application/pdf", "contentBytes": base64.b64encode(data).decode(),
+        })
+        return
+    session = graph.call("POST", f"{base}/createUploadSession", json={
+        "AttachmentItem": {"attachmentType": "file", "name": name, "size": len(data), "contentType": "application/pdf"}
+    }).json()
+    for start in range(0, len(data), CHUNK):
+        chunk = data[start:start + CHUNK]
+        # The upload URL carries its own token; sending an Authorization header makes it fail.
+        resp = requests.put(session["uploadUrl"], data=chunk, timeout=graph.TIMEOUT, headers={
+            "Content-Type": "application/octet-stream", "Content-Length": str(len(chunk)),
+            "Content-Range": f"bytes {start}-{start + len(chunk) - 1}/{len(data)}",
+        })
+        if resp.status_code >= 400:
+            raise graph.GraphError(f"Attachment upload failed for {name}: {resp.status_code} {resp.text[:300]}")
+
+
+def send_submission_email(r: PurchaseRequest) -> None:
+    """Send the email or raise. The caller records Sent/Failed on the request."""
+    s = get_settings()
+    subject, body = subject_for(r), body_for(r)
+
+    if s.demo_mode or not s.email_configured:
+        if not s.use_local_services:
+            raise RuntimeError("Email is not configured (GRAPH_* / GRAPH_SHARED_MAILBOX app settings missing)")
+        outbox = Path(s.db_path).parent / "outbox"
+        outbox.mkdir(parents=True, exist_ok=True)
+        (outbox / f"{r.request_number}.html").write_text(f"<h2>{html.escape(subject)}</h2>{body}", encoding="utf-8")
+        log.info("Local/demo mode: email for %s written to %s", r.request_number, outbox)
+        return
+
+    mb = s.graph_shared_mailbox
+    message = {
+        "subject": subject,
+        "body": {"contentType": "HTML", "content": body},
+        "toRecipients": [{"emailAddress": {"address": mb}}],
+        "ccRecipients": [{"emailAddress": {"address": r.requester_email, "name": r.requester_name}}],
+        "replyTo": [{"emailAddress": {"address": r.requester_email, "name": r.requester_name}}],
+    }
+    files = [(a.file_name, storage.get(s.blob_attachments_container, a.blob_path)) for a in r.attachments]
+
+    if sum(len(d) for _, d in files) < INLINE_LIMIT:
+        message["attachments"] = [{
+            "@odata.type": "#microsoft.graph.fileAttachment", "name": name,
+            "contentType": "application/pdf", "contentBytes": base64.b64encode(data).decode(),
+        } for name, data in files]
+        graph.call("POST", f"/users/{mb}/sendMail", json={"message": message, "saveToSentItems": True})
+    else:
+        draft = graph.call("POST", f"/users/{mb}/messages", json=message).json()
+        for name, data in files:
+            _attach(mb, draft["id"], name, data)
+        graph.call("POST", f"/users/{mb}/messages/{draft['id']}/send")
+    log.info("Email sent for %s at %s", r.request_number, datetime.now(timezone.utc).isoformat())
