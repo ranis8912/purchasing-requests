@@ -56,6 +56,16 @@ def test_small_attachments_use_sendmail(graph_calls, monkeypatch):
     assert msg["subject"].startswith("[PR-2026-0001] New SOW")
 
 
+def test_separate_recipient_group(graph_calls, monkeypatch):
+    r, data = make_request(10)
+    monkeypatch.setattr(email.storage, "get", lambda c, p: data)
+    monkeypatch.setattr(email.get_settings(), "email_to", "po-team@ges.com, backup@ges.com")
+    email.send_submission_email(r)
+    msg = graph_calls[0][2]["json"]["message"]
+    assert graph_calls[0][1] == "/users/po@ges.com/sendMail"  # sent from the mailbox
+    assert [t["emailAddress"]["address"] for t in msg["toRecipients"]] == ["po-team@ges.com", "backup@ges.com"]
+
+
 def test_large_attachments_use_draft_and_upload_session(graph_calls, monkeypatch):
     r, data = make_request(5 * 1024 * 1024)
     monkeypatch.setattr(email.storage, "get", lambda c, p: data)

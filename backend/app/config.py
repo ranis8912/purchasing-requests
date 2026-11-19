@@ -35,7 +35,8 @@ class Settings(BaseSettings):
     graph_app_id: str = ""
     graph_tenant_id: str = ""
     graph_client_secret: str = ""
-    graph_shared_mailbox: str = ""  # PO shared mailbox: From + To
+    graph_shared_mailbox: str = ""  # sender: must be a real (user or shared) mailbox, not a distribution group
+    email_to: str = ""  # recipient(s), comma-separated; may be a distribution group. Defaults to the sender.
 
     # Lists-of-values workbook in SharePoint (read via Graph, Sites.Selected)
     sp_site_url: str = ""  # e.g. https://contoso.sharepoint.com/sites/Purchasing

@@ -112,10 +112,11 @@ def send_submission_email(r: PurchaseRequest) -> None:
         return
 
     mb = s.graph_shared_mailbox
+    to = [a.strip() for a in (s.email_to or mb).split(",") if a.strip()]
     message = {
         "subject": subject,
         "body": {"contentType": "HTML", "content": body},
-        "toRecipients": [{"emailAddress": {"address": mb}}],
+        "toRecipients": [{"emailAddress": {"address": a}} for a in to],
         "ccRecipients": [{"emailAddress": {"address": r.requester_email, "name": r.requester_name}}],
         "replyTo": [{"emailAddress": {"address": r.requester_email, "name": r.requester_name}}],
     }
