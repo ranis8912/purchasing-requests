@@ -46,7 +46,8 @@ export default function Layout() {
 
       {me.demo_mode && (
         <div className="demo-banner" role="status">
-          <FlaskConical size={15} aria-hidden /> Demo environment: requests are fictional and no emails are sent to Purchasing.
+          <FlaskConical size={15} aria-hidden /> Demo environment: existing requests are fictional.{" "}
+          {me.email_live ? "New submissions DO send a real email to the Purchasing mailbox." : "No emails are sent to Purchasing."}
         </div>
       )}
       <main>

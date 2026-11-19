@@ -21,7 +21,8 @@ def health(db: Session = Depends(get_db)):
 
 @router.get("/me", tags=["meta"])
 def me(user: User = Depends(get_current_user), settings: Settings = Depends(get_settings)):
-    return {"email": user.email, "name": user.name, "is_admin": user.is_admin, "demo_mode": settings.demo_mode}
+    return {"email": user.email, "name": user.name, "is_admin": user.is_admin, "demo_mode": settings.demo_mode,
+            "email_live": settings.email_configured}
 
 
 @router.get("/lookups", tags=["meta"])

@@ -1,6 +1,6 @@
 // Typed API client. Every server call goes through `api()` so auth and errors are handled once.
 
-export type Me = { email: string; name: string; is_admin: boolean; demo_mode: boolean };
+export type Me = { email: string; name: string; is_admin: boolean; demo_mode: boolean; email_live: boolean };
 export type Option = { code: string; label: string };
 export type Lookups = {
   request_types: Option[];

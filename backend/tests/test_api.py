@@ -6,7 +6,7 @@ def test_health_and_auth(client):
     assert client.get("/api/me").status_code == 401
     assert client.get("/api/me", headers={"X-MS-CLIENT-PRINCIPAL": "not-base64!"}).status_code == 401
     me = client.get("/api/me", headers=ADMIN).json()
-    assert me == {"email": "po.admin@ges.com", "name": "Pat Admin", "is_admin": True, "demo_mode": False}
+    assert me == {"email": "po.admin@ges.com", "name": "Pat Admin", "is_admin": True, "demo_mode": False, "email_live": False}
     assert client.get("/api/me", headers=ALICE).json()["is_admin"] is False
 
 

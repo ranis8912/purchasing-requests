@@ -102,7 +102,7 @@ def send_submission_email(r: PurchaseRequest) -> None:
     s = get_settings()
     subject, body = subject_for(r), body_for(r)
 
-    if s.demo_mode or not s.email_configured:
+    if not s.email_configured:
         if not s.use_local_services:
             raise RuntimeError("Email is not configured (GRAPH_* / GRAPH_SHARED_MAILBOX app settings missing)")
         outbox = Path(s.db_path).parent / "outbox"

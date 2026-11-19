@@ -78,7 +78,7 @@ After deploying, open https://dv-gespurchasingrequests.ges.com in an InPrivate w
 | `APP_ENV` | `dev` |
 | `AUTH_MODE` | `easyauth` |
 | `AZURE_AD_ADMIN_GROUP_ID` | Object ID of the Purchasing admins group |
-| `DEMO_MODE` | `true` only for a demo: sample lists, fake requests seeded on first start, emails written to `/home/data/outbox` instead of sent. Remove for real use. |
+| `DEMO_MODE` | `true` only for a demo: sample lists and fake requests seeded on first start. Emails are sent if `GRAPH_*` is set, otherwise written to `/home/data/outbox`. Remove for real use. |
 | `APP_BASE_URL` | `https://app-wus2-purreq-dv.azurewebsites.net` |
 | `DB_PATH` | `/home/data/po_intake.db` |
 | `GRAPH_APP_ID`, `GRAPH_TENANT_ID` | Graph app registration (separate from the Easy Auth one) |
