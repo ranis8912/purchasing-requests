@@ -33,8 +33,9 @@ def subject_for(r: PurchaseRequest) -> str:
 
 
 def _is_test() -> bool:
-    """Everything except production (APP_ENV=prod) sends clearly marked test emails."""
-    return get_settings().app_env != "prod"
+    """Non-production environments send clearly marked test emails. Only the label changes; sending never
+    depends on APP_ENV. A blank APP_ENV counts as production."""
+    return get_settings().app_env.strip().lower() not in ("", "prod", "production")
 
 
 def _test_prefix() -> str:

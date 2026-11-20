@@ -88,3 +88,14 @@ def test_urgent_is_high_importance_and_prod_has_no_test_label(graph_calls, monke
     assert msg["importance"] == "high"
     assert msg["subject"].startswith("[PR-2026-0001] URGENT")
     assert "TEST ENVIRONMENT" not in msg["body"]["content"]
+
+
+@pytest.mark.parametrize("env", ["", "  ", "PROD", "production"])
+def test_blank_or_prod_env_still_sends_without_test_label(graph_calls, monkeypatch, env):
+    r, data = make_request(10)
+    monkeypatch.setattr(email.storage, "get", lambda c, p: data)
+    monkeypatch.setattr(email.get_settings(), "app_env", env)
+    email.send_submission_email(r)
+    msg = graph_calls[0][2]["json"]["message"]
+    assert graph_calls[0][1] == "/users/po@ges.com/sendMail"
+    assert msg["subject"].startswith("[PR-2026-0001]") and "TEST ENVIRONMENT" not in msg["body"]["content"]
