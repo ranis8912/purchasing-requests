@@ -35,12 +35,12 @@ def graph_calls(monkeypatch):
 def make_request(size: int):
     att = SimpleNamespace(file_name="sow.pdf", blob_path="x/y.pdf")
     return SimpleNamespace(
-        request_number="PR-2026-0001", request_type="New SOW", vendor_name="Acme", job_number="1", job_description="J",
-        cost_center="4100", cost_center_name="IT", expense_class="OpEx", amount=1000.0, currency="USD",
-        requester_email="a@ges.com", requester_name="A", department=None, title="T", is_new_vendor=False,
-        vendor_category="Other", vendor_contact_name=None, vendor_contact_email=None, capex_project_number=None,
-        expense_type="Services", billing_type="Fixed fee", start_date=None, end_date=None, needed_by=None,
-        is_budgeted=True, nda_in_place=False, vendor_data_access=False, description="<b>x</b>", attachments=[att],
+        request_number="PR-2026-0001", supplier_name="Acme", project_number="012345678", cost_center="0410",
+        amount=1000.0, requester_email="a@ges.com", requester_name="A", approver_email="ap@ges.com",
+        approver_name="Approver", po_recipients=None, is_po_extension=False, previous_po=None,
+        is_capital_project=False, capital_project_number=None, start_date="2026-01-01", end_date="2026-12-31",
+        agreement_signed=False, signature_date=None, is_urgent=False, urgent_reason=None,
+        description="<b>x</b>", attachments=[att],
     ), b"%PDF-" + b"0" * size
 
 
@@ -53,7 +53,7 @@ def test_small_attachments_use_sendmail(graph_calls, monkeypatch):
     assert msg["ccRecipients"][0]["emailAddress"]["address"] == "a@ges.com"
     assert msg["replyTo"][0]["emailAddress"]["address"] == "a@ges.com"
     assert "&lt;b&gt;x&lt;/b&gt;" in msg["body"]["content"]  # user text is escaped
-    assert msg["subject"].startswith("[PR-2026-0001] New SOW")
+    assert msg["subject"] == "[PR-2026-0001] – Acme – Project 012345678 – CC 0410 – $1,000.00"
 
 
 def test_separate_recipient_group(graph_calls, monkeypatch):

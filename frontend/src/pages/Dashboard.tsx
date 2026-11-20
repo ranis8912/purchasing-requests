@@ -5,9 +5,9 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { ArrowRight, DollarSign, FilePlus2, FileText, Hourglass, MessageSquareWarning } from "lucide-react";
 import { listRequests, type RequestSummary } from "../api";
 import { datePT, greeting, money, monthKeyPT } from "../format";
-import { Card, Empty, ErrorBox, ExpenseTag, StatusBadge, useMe } from "../components/ui";
+import { CapitalTag, Card, Empty, ErrorBox, StatusBadge, UrgentTag, useMe } from "../components/ui";
 
-const OPEN = ["Submitted", "In Review", "Info Needed"];
+const OPEN = ["Pending Review", "In Review", "Info Needed"];
 
 function lastTwelveMonths(rows: RequestSummary[]) {
   const counts = new Map<string, number>();
@@ -52,11 +52,12 @@ export default function Dashboard() {
 
   const stats = useMemo(() => {
     const year = String(new Date().getFullYear());
-    const ytd = rows.filter((r) => monthKeyPT(r.submitted_at).startsWith(year) && r.currency === "USD");
-    const opex = ytd.filter((r) => r.expense_class === "OpEx").reduce((s, r) => s + r.amount, 0);
-    const capex = ytd.filter((r) => r.expense_class === "CapEx").reduce((s, r) => s + r.amount, 0);
+    const ytd = rows.filter((r) => monthKeyPT(r.submitted_at).startsWith(year));
+    const opex = ytd.filter((r) => !r.is_capital_project).reduce((s, r) => s + r.amount, 0);
+    const capex = ytd.filter((r) => r.is_capital_project).reduce((s, r) => s + r.amount, 0);
     const byType = new Map<string, number>();
-    rows.forEach((r) => byType.set(r.request_type, (byType.get(r.request_type) ?? 0) + 1));
+    rows.filter((r) => r.is_urgent && OPEN.includes(r.status))
+      .forEach((r) => byType.set(r.urgent_reason ?? "Other", (byType.get(r.urgent_reason ?? "Other") ?? 0) + 1));
     return {
       open: rows.filter((r) => OPEN.includes(r.status)).length,
       infoNeeded: rows.filter((r) => r.status === "Info Needed").length,
@@ -78,7 +79,7 @@ export default function Dashboard() {
           <p>
             {me?.is_admin
               ? "Here's everything coming into Purchasing. Review new requests, follow up on missing information and keep vendors moving."
-              : "Send SOWs, requisitions, POs and contracts to Purchasing with everything they need the first time."}
+              : "Submit IT procurement requisitions with everything Procurement needs the first time."}
           </p>
         </div>
         <Link to="/new" className="btn btn-lime btn-lg"><FilePlus2 size={18} aria-hidden /> New request</Link>
@@ -88,11 +89,11 @@ export default function Dashboard() {
 
       <div className="grid grid-4" style={{ marginBottom: 20 }}>
         <Kpi label="Total requests" value={isLoading ? "—" : rows.length} sub={`${stats.thisMonth} this month`} icon={FileText} accent="var(--ges-teal)" />
-        <Kpi label="Open" value={isLoading ? "—" : stats.open} sub="Submitted, in review or waiting on info" icon={Hourglass} accent="var(--primary)"
+        <Kpi label="Open" value={isLoading ? "—" : stats.open} sub="Pending review, in review or waiting on info" icon={Hourglass} accent="var(--primary)"
           onClick={() => navigate("/requests?status=open")} />
         <Kpi label="Info needed" value={isLoading ? "—" : stats.infoNeeded} sub={stats.infoNeeded ? "Waiting on the requester" : "Nothing waiting"} icon={MessageSquareWarning}
           accent="var(--ges-gold)" onClick={() => navigate("/requests?status=Info%20Needed")} />
-        <Kpi label={`Value ${new Date().getFullYear()}`} value={isLoading ? "—" : money(stats.ytdTotal, "USD", true)} sub="Year to date, USD requests" icon={DollarSign} accent="var(--ges-lime)" />
+        <Kpi label={`Value ${new Date().getFullYear()}`} value={isLoading ? "—" : money(stats.ytdTotal, "USD", true)} sub="Year to date" icon={DollarSign} accent="var(--ges-lime)" />
       </div>
 
       <div className="grid grid-3-1" style={{ marginBottom: 20 }}>
@@ -110,17 +111,17 @@ export default function Dashboard() {
           </div>
         </Card>
 
-        <Card title="OpEx vs CapEx" subtitle={`Requested value, ${new Date().getFullYear()} (USD)`}>
+        <Card title="Capital vs non-capital" subtitle={`Requested value, ${new Date().getFullYear()}`}>
           {stats.ytdTotal === 0 ? (
             <p className="muted">No requests yet this year.</p>
           ) : (
             <>
-              <div className="split-bar" role="img" aria-label={`OpEx ${money(stats.opex)}, CapEx ${money(stats.capex)}`}>
-                {stats.opex > 0 && <div style={{ width: `${(stats.opex / stats.ytdTotal) * 100}%`, background: "var(--viz-1)" }} title={`OpEx ${money(stats.opex)}`} />}
-                {stats.capex > 0 && <div style={{ width: `${(stats.capex / stats.ytdTotal) * 100}%`, background: "var(--viz-2)" }} title={`CapEx ${money(stats.capex)}`} />}
+              <div className="split-bar" role="img" aria-label={`Non-capital ${money(stats.opex)}, capital ${money(stats.capex)}`}>
+                {stats.opex > 0 && <div style={{ width: `${(stats.opex / stats.ytdTotal) * 100}%`, background: "var(--viz-1)" }} title={`Non-capital ${money(stats.opex)}`} />}
+                {stats.capex > 0 && <div style={{ width: `${(stats.capex / stats.ytdTotal) * 100}%`, background: "var(--viz-2)" }} title={`Capital ${money(stats.capex)}`} />}
               </div>
               <div className="grid grid-2" style={{ marginTop: 16, gap: 12 }}>
-                {[["OpEx", stats.opex, "var(--viz-1)"], ["CapEx", stats.capex, "var(--viz-2)"]].map(([label, v, color]) => (
+                {[["Non-capital", stats.opex, "var(--viz-1)"], ["Capital", stats.capex, "var(--viz-2)"]].map(([label, v, color]) => (
                   <div key={label as string}>
                     <div className="legend"><span><i style={{ background: color as string }} />{label}</span></div>
                     <div style={{ fontSize: 20, fontWeight: 700, color: "var(--ges-navy-900)" }}>{money(v as number, "USD", true)}</div>
@@ -130,7 +131,7 @@ export default function Dashboard() {
               </div>
             </>
           )}
-          <h3 style={{ fontSize: 13, margin: "22px 0 10px", color: "var(--text-2)" }}>By request type</h3>
+          <h3 style={{ fontSize: 13, margin: "22px 0 10px", color: "var(--text-2)" }}>Open urgent requests by reason</h3>
           {stats.byType.length === 0 ? <p className="muted">—</p> : (
             <div className="bar-list">
               {stats.byType.slice(0, 5).map(([type, n]) => (
@@ -157,15 +158,15 @@ export default function Dashboard() {
         ) : (
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>Request</th><th>Title / vendor</th><th>Type</th>{me?.is_admin && <th>Requester</th>}<th className="num">Amount</th><th>Status</th><th>Submitted</th></tr></thead>
+              <thead><tr><th>Request</th><th>Supplier</th><th>Project · CC</th>{me?.is_admin && <th>Requester</th>}<th className="num">Amount</th><th>Status</th><th>Submitted</th></tr></thead>
               <tbody>
                 {rows.slice(0, 6).map((r) => (
                   <tr key={r.request_number} onClick={() => navigate(`/requests/${r.request_number}`)}>
                     <td><Link to={`/requests/${r.request_number}`} className="mono" onClick={(e) => e.stopPropagation()}>{r.request_number}</Link></td>
-                    <td><div className="cell-title">{r.title}</div><div className="small muted">{r.vendor_name}</div></td>
-                    <td>{r.request_type}</td>
+                    <td><div className="cell-title">{r.supplier_name}</div>{r.is_urgent && <UrgentTag reason={r.urgent_reason} />}</td>
+                    <td className="small"><span className="mono">{r.project_number}</span> · <span className="mono">{r.cost_center}</span></td>
                     {me?.is_admin && <td>{r.requester_name}</td>}
-                    <td className="num">{money(r.amount, r.currency)} <ExpenseTag value={r.expense_class} /></td>
+                    <td className="num">{money(r.amount)} <CapitalTag capital={r.is_capital_project} /></td>
                     <td><StatusBadge status={r.status} /></td>
                     <td className="muted">{datePT(r.submitted_at)}</td>
                   </tr>

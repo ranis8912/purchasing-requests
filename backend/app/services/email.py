@@ -1,4 +1,4 @@
-"""Submission email via Graph: one message From/To the PO shared mailbox, CC + Reply-To the requester.
+"""Submission email via Graph: one message from the PO shared mailbox to EMAIL_TO, CC + Reply-To the requester.
 
 Graph's sendMail takes a ~4 MB request, so:
 - attachments under 3 MB in total: one sendMail call (needs only the Mail.Send permission)
@@ -22,13 +22,13 @@ INLINE_LIMIT = 3 * 1024 * 1024
 CHUNK = 4 * 1024 * 1024  # Outlook upload sessions accept up to 4 MB per PUT
 
 
-def money(amount: float, currency: str) -> str:
-    return f"${amount:,.0f}" if currency == "USD" else f"{amount:,.0f} {currency}"
+def money(amount: float) -> str:
+    return f"${amount:,.2f}"
 
 
 def subject_for(r: PurchaseRequest) -> str:
-    parts = [f"[{r.request_number}] {r.request_type}", r.vendor_name, f"Job {r.job_number}",
-             f"CC {r.cost_center}", r.expense_class, money(r.amount, r.currency)]
+    parts = [f"[{r.request_number}]" + (" URGENT" if r.is_urgent else ""), r.supplier_name,
+             f"Project {r.project_number}", f"CC {r.cost_center}", money(r.amount)]
     return " – ".join(parts)
 
 
@@ -37,24 +37,18 @@ def body_for(r: PurchaseRequest) -> str:
     link = f"{s.app_base_url.rstrip('/')}/requests/{r.request_number}"
     yes_no = lambda b: "Yes" if b else "No"  # noqa: E731
     rows = [
+        ("Urgent", f"Yes – {r.urgent_reason}" if r.is_urgent else None),
         ("Requester", f"{r.requester_name} <{r.requester_email}>"),
-        ("Department", r.department),
-        ("Request type", r.request_type),
-        ("Title", r.title),
-        ("Job number", f"{r.job_number} – {r.job_description or ''}"),
-        ("Cost center", f"{r.cost_center} – {r.cost_center_name or ''}"),
-        ("Vendor", f"{r.vendor_name}{' (NEW VENDOR)' if r.is_new_vendor else ''}"),
-        ("Vendor category", r.vendor_category),
-        ("Vendor contact", " / ".join(x for x in [r.vendor_contact_name, r.vendor_contact_email] if x)),
-        ("OpEx / CapEx", r.expense_class + (f" – Project {r.capex_project_number}" if r.capex_project_number else "")),
-        ("Expense type", r.expense_type),
-        ("Amount", money(r.amount, r.currency)),
-        ("Billing", r.billing_type),
-        ("Term", f"{r.start_date or '—'} to {r.end_date or '—'}" if r.start_date or r.end_date else None),
-        ("Needed by", r.needed_by),
-        ("Budgeted", yes_no(r.is_budgeted)),
-        ("NDA in place", yes_no(r.nda_in_place)),
-        ("Vendor accesses GES data/systems", yes_no(r.vendor_data_access)),
+        ("Approver", f"{r.approver_name} <{r.approver_email}>"),
+        ("Additional PO recipients", r.po_recipients),
+        ("PO extension / add-on", yes_no(r.is_po_extension) + (f" – Previous PO {r.previous_po}" if r.previous_po else "")),
+        ("Capital project", yes_no(r.is_capital_project) + (f" – {r.capital_project_number}" if r.capital_project_number else "")),
+        ("Project number", r.project_number),
+        ("Task / cost center", r.cost_center),
+        ("Supplier", r.supplier_name),
+        ("Service dates", f"{r.start_date} to {r.end_date}"),
+        ("Agreement signed", yes_no(r.agreement_signed) + (f" – {r.signature_date}" if r.signature_date else "")),
+        ("Total order form / SOW value", money(r.amount)),
     ]
 
     trs = "".join(
@@ -63,13 +57,13 @@ def body_for(r: PurchaseRequest) -> str:
         for k, v in rows if v not in (None, "")
     )
     files = "".join(f"<li>{html.escape(a.file_name)}</li>" for a in r.attachments)
+    notes = (f'<h3 style="margin:18px 0 6px">Description / notes</h3>'
+             f'<div style="white-space:pre-wrap;max-width:760px">{html.escape(r.description)}</div>') if r.description else ""
     return f"""<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#1b2430">
 <div style="background:#0b2341;color:#fff;padding:14px 18px;font-size:18px;font-weight:600">
-New purchasing request {html.escape(r.request_number)}</div>
+New IT procurement requisition {html.escape(r.request_number)}</div>
 <table style="border-collapse:collapse;width:100%;max-width:760px;margin-top:12px">{trs}</table>
-<h3 style="margin:18px 0 6px">Description / business justification</h3>
-<div style="white-space:pre-wrap;max-width:760px">{html.escape(r.description)}</div>
-<h3 style="margin:18px 0 6px">Attachments</h3><ul>{files}</ul>
+{notes}<h3 style="margin:18px 0 6px">Attachments</h3><ul>{files}</ul>
 <p><a href="{html.escape(link)}" style="background:#0067b1;color:#fff;padding:8px 16px;text-decoration:none;border-radius:4px">
 Open request in the Purchasing Request portal</a></p>
 <p style="color:#6b7686;font-size:12px">Reply to this email to reach the requester directly.</p></div>"""
@@ -80,11 +74,11 @@ def _attach(mailbox: str, message_id: str, name: str, data: bytes) -> None:
     if len(data) < INLINE_LIMIT:
         graph.call("POST", base, json={
             "@odata.type": "#microsoft.graph.fileAttachment", "name": name,
-            "contentType": "application/pdf", "contentBytes": base64.b64encode(data).decode(),
+            "contentType": storage.content_type(name), "contentBytes": base64.b64encode(data).decode(),
         })
         return
     session = graph.call("POST", f"{base}/createUploadSession", json={
-        "AttachmentItem": {"attachmentType": "file", "name": name, "size": len(data), "contentType": "application/pdf"}
+        "AttachmentItem": {"attachmentType": "file", "name": name, "size": len(data), "contentType": storage.content_type(name)}
     }).json()
     for start in range(0, len(data), CHUNK):
         chunk = data[start:start + CHUNK]
@@ -125,7 +119,7 @@ def send_submission_email(r: PurchaseRequest) -> None:
     if sum(len(d) for _, d in files) < INLINE_LIMIT:
         message["attachments"] = [{
             "@odata.type": "#microsoft.graph.fileAttachment", "name": name,
-            "contentType": "application/pdf", "contentBytes": base64.b64encode(data).decode(),
+            "contentType": storage.content_type(name), "contentBytes": base64.b64encode(data).decode(),
         } for name, data in files]
         graph.call("POST", f"/users/{mb}/sendMail", json={"message": message, "saveToSentItems": True})
     else:

@@ -5,17 +5,10 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
 SHEETS = {
-    "RequestTypes": (["Value", "Active"], [["New SOW", "Y"], ["Requisition", "Y"], ["Purchase Order", "Y"],
-                     ["Contract", "Y"], ["Amendment", "Y"], ["Renewal", "Y"], ["Change Order", "Y"]]),
-    "JobNumbers": (["Code", "Description", "Active"], [["100001", "SAMPLE – Corporate IT", "Y"],
-                   ["100002", "SAMPLE – Las Vegas Shows", "Y"], ["100003", "SAMPLE – Orlando Shows", "Y"],
-                   ["100004", "SAMPLE – Retired job", "N"]]),
-    "CostCenters": (["Code", "Name", "Active"], [["4100", "SAMPLE – Information Technology", "Y"],
-                    ["4200", "SAMPLE – Finance", "Y"], ["4300", "SAMPLE – Operations", "Y"], ["4400", "SAMPLE – Marketing", "Y"]]),
-    "VendorCategories": (["Value", "Active"], [["Consultant / Professional Services", "Y"], ["Software / SaaS", "Y"],
-                         ["Hardware", "Y"], ["Contractor / Staff Augmentation", "Y"], ["Facilities", "Y"], ["Other", "Y"]]),
-    "ExpenseTypes": (["Value", "Active"], [["Services", "Y"], ["Software license", "Y"], ["Equipment", "Y"],
-                     ["Maintenance & support", "Y"], ["Travel & events", "Y"], ["Other", "Y"]]),
+    "Approvers": (["Email", "Name", "Active"], [["approver.one@example.com", "SAMPLE – Approver One", "Y"],
+                  ["approver.two@example.com", "SAMPLE – Approver Two", "Y"],
+                  ["approver.three@example.com", "SAMPLE – Approver Three", "Y"],
+                  ["former.approver@example.com", "SAMPLE – Former Approver", "N"]]),
 }
 
 out = Path(__file__).resolve().parent.parent / "sample_data" / "PO Intake Lists.xlsx"

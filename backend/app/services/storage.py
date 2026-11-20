@@ -4,6 +4,25 @@ from pathlib import Path
 
 from ..config import get_settings
 
+OLE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"  # legacy Office (.doc/.xls)
+ZIP = b"PK\x03\x04"  # Office Open XML (.docx/.xlsx)
+# Allowed attachment types: extension -> (content type, file signature the bytes must start with)
+FILE_TYPES = {
+    ".pdf": ("application/pdf", b"%PDF-"),
+    ".doc": ("application/msword", OLE),
+    ".docx": ("application/vnd.openxmlformats-officedocument.wordprocessingml.document", ZIP),
+    ".xls": ("application/vnd.ms-excel", OLE),
+    ".xlsx": ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ZIP),
+}
+
+
+def extension(name: str) -> str:
+    return Path(name).suffix.lower()
+
+
+def content_type(name: str) -> str:
+    return FILE_TYPES.get(extension(name), ("application/octet-stream", b""))[0]
+
 
 @lru_cache
 def _blob_service():

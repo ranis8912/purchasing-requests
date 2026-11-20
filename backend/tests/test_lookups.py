@@ -24,13 +24,13 @@ GOOD = {s: [["Code", "Name", "Active"], ["A", "Alpha", "Y"], ["B", "Beta", "N"]]
 
 def test_parse_good_workbook():
     lists = lookups.parse_workbook(workbook(**GOOD))
-    assert lists["job_numbers"] == [("A", "Alpha")]
+    assert lists["approvers"] == [("A", "Alpha")]
 
 
 @pytest.mark.parametrize("sheets, error", [
-    ({k: v for k, v in GOOD.items() if k != "JobNumbers"}, "Missing sheet 'JobNumbers'"),
-    ({**GOOD, "CostCenters": [["Code", "Name"], ["A", "x"], ["A", "y"]]}, "Duplicate value 'A'"),
-    ({**GOOD, "ExpenseTypes": [["Value", "Active"], ["X", "N"]]}, "no active values"),
+    ({"Other": [["x"]]}, "Missing sheet 'Approvers'"),
+    ({"Approvers": [["Email", "Name"], ["A", "x"], ["A", "y"]]}, "Duplicate value 'A'"),
+    ({"Approvers": [["Email", "Name", "Active"], ["X", "x", "N"]]}, "no active values"),
 ])
 def test_bad_workbook_rejected(sheets, error):
     with pytest.raises(lookups.WorkbookError, match=error):
@@ -39,7 +39,7 @@ def test_bad_workbook_rejected(sheets, error):
 
 def test_failed_refresh_keeps_last_good_lists(client, monkeypatch, tmp_path):
     bad = tmp_path / "bad.xlsx"
-    bad.write_bytes(workbook(JobNumbers=[["Code"], ["1"]]))
+    bad.write_bytes(workbook(Other=[["Code"], ["1"]]))
     monkeypatch.setattr(lookups.get_settings(), "local_lists_file", str(bad))
     with SessionLocal() as db:
         before = lookups.get_lists(db)

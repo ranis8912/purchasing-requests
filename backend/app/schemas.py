@@ -4,49 +4,58 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
-CURRENCIES = ["USD", "CAD", "EUR", "GBP"]
-BILLING_TYPES = ["Fixed fee", "Time & materials", "Recurring / subscription", "One-time purchase"]
+from .models import URGENT_REASONS
+
+UrgentReason = Literal[tuple(URGENT_REASONS)]  # type: ignore[valid-type]
 
 
 class RequestIn(BaseModel):
     """Form fields. Sent as a JSON string in the multipart 'payload' part next to the PDF files."""
 
-    request_type: str = Field(min_length=1, max_length=100)
-    title: str = Field(min_length=3, max_length=200)
-    department: str | None = Field(default=None, max_length=200)
-    job_number: str = Field(min_length=1, max_length=50)
-    cost_center: str = Field(min_length=1, max_length=50)
+    approver_email: EmailStr
+    po_recipients: list[EmailStr] = Field(default=[], max_length=10)
 
-    vendor_name: str = Field(min_length=2, max_length=200)
-    is_new_vendor: bool = False
-    vendor_category: str = Field(min_length=1, max_length=100)
-    vendor_contact_name: str | None = Field(default=None, max_length=200)
-    vendor_contact_email: EmailStr | None = None
+    is_po_extension: bool
+    previous_po: str | None = Field(default=None, max_length=50)
+    is_capital_project: bool
+    capital_project_number: str | None = Field(default=None, max_length=50)
+    project_number: str = Field(pattern=r"^\d{9}$")
+    cost_center: str = Field(pattern=r"^\d{4}$")
 
-    expense_class: Literal["OpEx", "CapEx"]
-    expense_type: str = Field(min_length=1, max_length=100)
-    capex_project_number: str | None = Field(default=None, max_length=50)
+    supplier_name: str = Field(min_length=2, max_length=200)
+    start_date: date
+    end_date: date
+    agreement_signed: bool
+    signature_date: date | None = None
     amount: float = Field(gt=0, lt=1_000_000_000)
-    currency: Literal["USD", "CAD", "EUR", "GBP"] = "USD"
-    billing_type: str = Field(min_length=1, max_length=50)
-    start_date: date | None = None
-    end_date: date | None = None
-    needed_by: date | None = None
-    is_budgeted: bool = True
-    nda_in_place: bool = False
-    vendor_data_access: bool = False
-    description: str = Field(min_length=10, max_length=5000)
+
+    is_urgent: bool = False
+    urgent_reason: UrgentReason | None = None
+    description: str | None = Field(default=None, max_length=5000)
 
     @model_validator(mode="after")
     def _rules(self):
-        if self.billing_type not in BILLING_TYPES:
-            raise ValueError(f"billing_type must be one of {BILLING_TYPES}")
-        if self.is_new_vendor and not (self.vendor_contact_name and self.vendor_contact_email):
-            raise ValueError("New vendors need a contact name and email")
-        if self.expense_class == "CapEx" and not self.capex_project_number:
-            raise ValueError("CapEx requests need a capital project number")
-        if self.start_date and self.end_date and self.end_date < self.start_date:
+        # Clear answers that don't apply, so stored data matches what the form showed.
+        if not self.is_po_extension:
+            self.previous_po = None
+        elif not (self.previous_po or "").strip():
+            raise ValueError("Previous PO is required for a PO extension / add-on")
+        if not self.is_capital_project:
+            self.capital_project_number = None
+        elif not (self.capital_project_number or "").strip():
+            raise ValueError("Capital project number is required for a capital project")
+        if self.end_date < self.start_date:
             raise ValueError("End date is before start date")
+        if not self.agreement_signed:
+            self.signature_date = None
+        elif not self.signature_date:
+            raise ValueError("Date of signature is required when the agreement is signed")
+        elif self.signature_date > date.today():
+            raise ValueError("Date of signature can't be in the future")
+        if not self.is_urgent:
+            self.urgent_reason = None
+        elif not self.urgent_reason:
+            raise ValueError("Choose a reason for the urgent request")
         return self
 
 
@@ -73,36 +82,29 @@ class RequestSummary(BaseModel):
     submitted_at: datetime
     requester_name: str
     requester_email: str
-    request_type: str
-    title: str
-    job_number: str
+    supplier_name: str
+    project_number: str
     cost_center: str
-    vendor_name: str
-    expense_class: str
+    is_capital_project: bool
     amount: float
-    currency: str
-    needed_by: date | None
+    start_date: date
+    is_urgent: bool
+    urgent_reason: str | None
     status: str
     email_status: str
 
 
 class RequestDetail(RequestSummary):
-    department: str | None
-    job_description: str | None
-    cost_center_name: str | None
-    is_new_vendor: bool
-    vendor_category: str
-    vendor_contact_name: str | None
-    vendor_contact_email: str | None
-    expense_type: str
-    capex_project_number: str | None
-    billing_type: str
-    start_date: date | None
-    end_date: date | None
-    is_budgeted: bool
-    nda_in_place: bool
-    vendor_data_access: bool
-    description: str
+    approver_email: str
+    approver_name: str
+    po_recipients: str | None
+    is_po_extension: bool
+    previous_po: str | None
+    capital_project_number: str | None
+    end_date: date
+    agreement_signed: bool
+    signature_date: date | None
+    description: str | None
     email_error: str | None
     email_sent_at: datetime | None
     admin_notes: str | None

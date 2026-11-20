@@ -4,9 +4,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, ChevronLeft, ExternalLink, FileText, Mail, RefreshCw, Save } from "lucide-react";
 import { attachmentUrl, getRequest, resendEmail, updateNotes, updateStatus, type RequestDetail as Detail } from "../api";
 import { dateTimePT, day, fileSize, money } from "../format";
-import { Card, EmailBadge, Empty, ErrorBox, ExpenseTag, PageLoader, Spinner, StatusBadge, useMe, useToast } from "../components/ui";
+import { CapitalTag, Card, EmailBadge, Empty, ErrorBox, PageLoader, Spinner, StatusBadge, UrgentTag, useMe, useToast } from "../components/ui";
 
-const STATUSES = ["Submitted", "In Review", "Info Needed", "PO/Req Created", "Contract Signed", "Closed", "Rejected"];
+const STATUSES = ["Pending Review", "In Review", "Info Needed", "PO/Req Created", "Contract Signed", "Closed", "Rejected"];
 const yesNo = (b: boolean) => (b ? "Yes" : "No");
 
 function Dl({ items }: { items: [string, ReactNode][] }) {
@@ -35,7 +35,7 @@ function AdminPanel({ r }: { r: Detail }) {
   const notesMut = useMutation({ mutationFn: () => updateNotes(r.request_number, notes), onSuccess: done("Notes saved"), onError: fail });
   const emailMut = useMutation({
     mutationFn: () => resendEmail(r.request_number),
-    onSuccess: (u) => { done(u.email_status === "Sent" ? "Email sent to Purchasing" : "Email failed again")(u); }, onError: fail,
+    onSuccess: (u) => { done(u.email_status === "Sent" ? "Email sent to Procurement" : "Email failed again")(u); }, onError: fail,
   });
 
   return (
@@ -103,55 +103,58 @@ export default function RequestDetail() {
             <span className="mono" style={{ fontSize: 15 }}>{r.request_number}</span>
             <StatusBadge status={r.status} />
             <EmailBadge status={r.email_status} />
+            {r.is_urgent && <UrgentTag reason={r.urgent_reason} />}
           </div>
-          <h1 style={{ marginTop: 6 }}>{r.title}</h1>
-          <p>{r.request_type} · {r.vendor_name} · Submitted {dateTimePT(r.submitted_at)} by {r.requester_name}</p>
+          <h1 style={{ marginTop: 6 }}>{r.supplier_name}</h1>
+          <p>Project {r.project_number} · CC {r.cost_center} · Submitted {dateTimePT(r.submitted_at)} by {r.requester_name}</p>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 28, fontWeight: 700, color: "var(--ges-navy-900)" }}>{money(r.amount, r.currency)}</div>
-          <ExpenseTag value={r.expense_class} />
+          <div style={{ fontSize: 28, fontWeight: 700, color: "var(--ges-navy-900)" }}>{money(r.amount)}</div>
+          <CapitalTag capital={r.is_capital_project} />
         </div>
       </div>
 
       {me?.is_admin && r.email_status === "Failed" && (
         <div className="alert alert-danger" style={{ marginBottom: 20 }}>
           <AlertCircle size={18} aria-hidden />
-          <div><strong>The email to Purchasing failed.</strong> Use “Resend email” once the issue is fixed.<div className="small" style={{ marginTop: 4, opacity: 0.85 }}>{r.email_error}</div></div>
+          <div><strong>The email to Procurement failed.</strong> Use “Resend email” once the issue is fixed.<div className="small" style={{ marginTop: 4, opacity: 0.85 }}>{r.email_error}</div></div>
         </div>
       )}
       {r.status === "Info Needed" && (
         <div className="alert alert-warn" style={{ marginBottom: 20 }}>
-          <Mail size={18} aria-hidden /><div><strong>Purchasing needs more information.</strong> Check the timeline below and reply to the Purchasing email thread.</div>
+          <Mail size={18} aria-hidden /><div><strong>Procurement needs more information.</strong> Check the timeline below and reply to the Procurement email thread.</div>
         </div>
       )}
 
       <div className="grid grid-3-1">
         <div className="grid" style={{ alignContent: "start" }}>
-          <Card title="Request & charge to">
+          {r.is_urgent && (
+            <div className="alert alert-danger"><AlertCircle size={18} aria-hidden /><div><strong>Urgent:</strong> {r.urgent_reason}</div></div>
+          )}
+          <Card title="Stakeholders">
             <Dl items={[
-              ["Request type", r.request_type], ["Needed by", day(r.needed_by)],
-              ["Requester", <>{r.requester_name}<div className="small muted">{r.requester_email}</div></>], ["Department", r.department],
-              ["Job number", <><span className="mono">{r.job_number}</span><div className="small muted">{r.job_description}</div></>],
-              ["Cost center", <><span className="mono">{r.cost_center}</span><div className="small muted">{r.cost_center_name}</div></>],
+              ["Requester", <>{r.requester_name}<div className="small muted">{r.requester_email}</div></>],
+              ["Date submitted", dateTimePT(r.submitted_at)],
+              ["Approver", <>{r.approver_name}<div className="small muted">{r.approver_email}</div></>],
+              ["Additional PO recipients", r.po_recipients],
             ]} />
           </Card>
-          <Card title="Vendor">
+          <Card title="Project costing">
             <Dl items={[
-              ["Vendor", <>{r.vendor_name} {r.is_new_vendor && <span className="badge badge-warn" style={{ marginLeft: 6 }}>New vendor</span>}</>],
-              ["Category", r.vendor_category],
-              ["Contact", r.vendor_contact_name], ["Contact email", r.vendor_contact_email],
+              ["PO extension / add-on", yesNo(r.is_po_extension)], ["Previous PO", r.previous_po],
+              ["Capital project", yesNo(r.is_capital_project)], ["Capital project number", r.capital_project_number],
+              ["Project number", <span className="mono">{r.project_number}</span>],
+              ["Task / cost center", <span className="mono">{r.cost_center}</span>],
             ]} />
           </Card>
-          <Card title="Financials & compliance">
+          <Card title="SOW / quote / order form">
             <Dl items={[
-              ["Amount", money(r.amount, r.currency)], ["OpEx / CapEx", <><ExpenseTag value={r.expense_class} />{r.capex_project_number && <span className="small muted"> Project {r.capex_project_number}</span>}</>],
-              ["Expense type", r.expense_type], ["Billing", r.billing_type],
-              ["Start date", day(r.start_date)], ["End date", day(r.end_date)],
-              ["In budget", yesNo(r.is_budgeted)], ["NDA in place", yesNo(r.nda_in_place)],
-              ["Vendor accesses GES data/systems", yesNo(r.vendor_data_access)],
+              ["Supplier", r.supplier_name], ["Total value", money(r.amount)],
+              ["Service start", day(r.start_date)], ["Service end", day(r.end_date)],
+              ["Agreement signed", yesNo(r.agreement_signed)], ["Date of signature", day(r.signature_date)],
             ]} />
           </Card>
-          <Card title="Description / business justification"><div className="prose">{r.description}</div></Card>
+          {r.description && <Card title="Description / notes"><div className="prose">{r.description}</div></Card>}
         </div>
 
         <div className="grid" style={{ alignContent: "start" }}>

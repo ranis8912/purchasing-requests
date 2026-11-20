@@ -11,9 +11,11 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-STATUSES = ["Submitted", "In Review", "Info Needed", "PO/Req Created", "Contract Signed", "Closed", "Rejected"]
-OPEN_STATUSES = ["Submitted", "In Review", "Info Needed"]
+STATUSES = ["Pending Review", "In Review", "Info Needed", "PO/Req Created", "Contract Signed", "Closed", "Rejected"]
+OPEN_STATUSES = ["Pending Review", "In Review", "Info Needed"]
 EMAIL_STATUSES = ["Pending", "Sent", "Failed"]
+URGENT_REASONS = ["Late PO Request", "Commercial Deadline", "Past Due Payment(s)", "Project / Service Deadline",
+                  "Business Critical/Continuity"]
 
 
 class PurchaseRequest(Base):
@@ -23,39 +25,35 @@ class PurchaseRequest(Base):
     request_number: Mapped[str] = mapped_column(String(20), unique=True, index=True)  # PR-2026-0001
     submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
+    # Stakeholders
     requester_email: Mapped[str] = mapped_column(String(320), index=True)
     requester_name: Mapped[str] = mapped_column(String(200))
-    department: Mapped[str | None] = mapped_column(String(200))
+    approver_email: Mapped[str] = mapped_column(String(320))
+    approver_name: Mapped[str] = mapped_column(String(200))
+    po_recipients: Mapped[str | None] = mapped_column(Text)  # comma-separated emails
 
-    request_type: Mapped[str] = mapped_column(String(100))
-    title: Mapped[str] = mapped_column(String(200))
-    # Code + description are both stored so history stays accurate when lists change.
-    job_number: Mapped[str] = mapped_column(String(50), index=True)
-    job_description: Mapped[str | None] = mapped_column(String(300))
-    cost_center: Mapped[str] = mapped_column(String(50))
-    cost_center_name: Mapped[str | None] = mapped_column(String(300))
+    # Project costing. Numbers are text so leading zeroes survive.
+    is_po_extension: Mapped[bool] = mapped_column(Boolean)
+    previous_po: Mapped[str | None] = mapped_column(String(50))
+    is_capital_project: Mapped[bool] = mapped_column(Boolean)
+    capital_project_number: Mapped[str | None] = mapped_column(String(50))
+    project_number: Mapped[str] = mapped_column(String(9), index=True)
+    cost_center: Mapped[str] = mapped_column(String(4))  # Task / Cost Center
 
-    vendor_name: Mapped[str] = mapped_column(String(200), index=True)
-    is_new_vendor: Mapped[bool] = mapped_column(Boolean, default=False)
-    vendor_category: Mapped[str] = mapped_column(String(100))
-    vendor_contact_name: Mapped[str | None] = mapped_column(String(200))
-    vendor_contact_email: Mapped[str | None] = mapped_column(String(320))
+    # SOW / quote / order form
+    supplier_name: Mapped[str] = mapped_column(String(200), index=True)
+    start_date: Mapped[date] = mapped_column(Date)
+    end_date: Mapped[date] = mapped_column(Date)
+    agreement_signed: Mapped[bool] = mapped_column(Boolean)
+    signature_date: Mapped[date | None] = mapped_column(Date)
+    amount: Mapped[float] = mapped_column(Float)  # USD
 
-    expense_class: Mapped[str] = mapped_column(String(10))  # OpEx | CapEx
-    expense_type: Mapped[str] = mapped_column(String(100))
-    capex_project_number: Mapped[str | None] = mapped_column(String(50))
-    amount: Mapped[float] = mapped_column(Float)
-    currency: Mapped[str] = mapped_column(String(3), default="USD")
-    billing_type: Mapped[str] = mapped_column(String(50))
-    start_date: Mapped[date | None] = mapped_column(Date)
-    end_date: Mapped[date | None] = mapped_column(Date)
-    needed_by: Mapped[date | None] = mapped_column(Date)
-    is_budgeted: Mapped[bool] = mapped_column(Boolean, default=True)
-    nda_in_place: Mapped[bool] = mapped_column(Boolean, default=False)
-    vendor_data_access: Mapped[bool] = mapped_column(Boolean, default=False)
-    description: Mapped[str] = mapped_column(Text)
+    # Urgency + notes
+    is_urgent: Mapped[bool] = mapped_column(Boolean, default=False)
+    urgent_reason: Mapped[str | None] = mapped_column(String(50))
+    description: Mapped[str | None] = mapped_column(Text)
 
-    status: Mapped[str] = mapped_column(String(30), default="Submitted", index=True)
+    status: Mapped[str] = mapped_column(String(30), default="Pending Review", index=True)
     email_status: Mapped[str] = mapped_column(String(10), default="Pending")
     email_error: Mapped[str | None] = mapped_column(Text)
     email_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -12,7 +12,7 @@ export function useMe() {
 
 /* ---------- Status badge: colour + icon + label, never colour alone ---------- */
 const STATUS: Record<string, { cls: string; icon: LucideIcon }> = {
-  Submitted: { cls: "badge-info", icon: CircleDot },
+  "Pending Review": { cls: "badge-info", icon: CircleDot },
   "In Review": { cls: "badge-info", icon: Search },
   "Info Needed": { cls: "badge-warn", icon: HelpCircle },
   "PO/Req Created": { cls: "badge-ok", icon: FileCheck2 },
@@ -37,8 +37,12 @@ export function EmailBadge({ status }: { status: string }) {
   return <span className="badge badge-neutral"><Clock size={13} aria-hidden /> Email pending</span>;
 }
 
-export function ExpenseTag({ value }: { value: string }) {
-  return <span className={`tag ${value === "CapEx" ? "tag-capex" : "tag-opex"}`}>{value}</span>;
+export function CapitalTag({ capital }: { capital: boolean }) {
+  return <span className={`tag ${capital ? "tag-capex" : "tag-opex"}`}>{capital ? "Capital" : "Non-capital"}</span>;
+}
+
+export function UrgentTag({ reason }: { reason: string | null }) {
+  return <span className="badge badge-danger" title={reason ?? undefined}>Urgent</span>;
 }
 
 /* ---------- Layout bits ---------- */

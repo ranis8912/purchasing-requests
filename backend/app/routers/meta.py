@@ -6,8 +6,7 @@ from sqlalchemy.orm import Session
 from ..auth import User, get_current_user, require_admin
 from ..config import Settings, get_settings
 from ..db import get_db
-from ..models import STATUSES, LookupRefresh, LookupValue
-from ..schemas import BILLING_TYPES, CURRENCIES
+from ..models import STATUSES, URGENT_REASONS, LookupRefresh, LookupValue
 from ..services import lookups
 
 router = APIRouter(prefix="/api")
@@ -27,7 +26,7 @@ def me(user: User = Depends(get_current_user), settings: Settings = Depends(get_
 
 @router.get("/lookups", tags=["meta"])
 def get_lookups(_: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return {**lookups.get_lists(db), "currencies": CURRENCIES, "billing_types": BILLING_TYPES, "statuses": STATUSES}
+    return {**lookups.get_lists(db), "urgent_reasons": URGENT_REASONS, "statuses": STATUSES}
 
 
 def _refresh_status(db: Session) -> dict:

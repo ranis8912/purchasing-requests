@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     app_env: str = "dev" if ON_APP_SERVICE else "local"  # local | dev | prod
     app_base_url: str = "http://localhost:5173"
     db_path: str = str(DATA_DIR / "po_intake.db")
-    # Demo mode: sample lists and seeded fake requests. Emails are sent if GRAPH_* is configured, else written to an outbox folder.
+    # Demo mode: sample lists and local file storage. Emails are sent if GRAPH_* is configured, else written to an outbox folder.
     demo_mode: bool = False
     static_dir: str = str(BACKEND_DIR / "static")  # React build output
 

@@ -52,18 +52,21 @@ def _send_email(db: Session, r: PurchaseRequest) -> None:
     db.commit()
 
 
-async def _read_pdfs(files: list[UploadFile]) -> list[tuple[str, bytes]]:
+async def _read_files(files: list[UploadFile]) -> list[tuple[str, bytes]]:
     s = get_settings()
     if not files:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Attach at least one PDF")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Attach at least one supporting document")
     if len(files) > s.max_files:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"Attach at most {s.max_files} files")
     out = []
     for f in files:
         data = await f.read()
-        name = (f.filename or "attachment.pdf").replace("\\", "/").rsplit("/", 1)[-1][:255]
-        if not data.startswith(b"%PDF-"):
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"'{name}' is not a PDF")
+        name = (f.filename or "attachment").replace("\\", "/").rsplit("/", 1)[-1][:255]
+        kind = storage.FILE_TYPES.get(storage.extension(name))
+        if not kind:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"'{name}': only PDF, Word or Excel files are allowed")
+        if not data.startswith(kind[1]):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"'{name}' doesn't match its file type")
         if len(data) > s.max_file_mb * 1024 * 1024:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"'{name}' is larger than {s.max_file_mb} MB")
         out.append((name, data))
@@ -84,29 +87,26 @@ async def submit_request(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, msgs) from exc
     except json.JSONDecodeError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid form data") from exc
-    pdfs = await _read_pdfs(files)
+    uploads = await _read_files(files)
 
-    job = lookups.find(db, "job_numbers", data.job_number)
-    cc = lookups.find(db, "cost_centers", data.cost_center)
-    if not job or not cc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown job number or cost center")
+    approver = lookups.find(db, "approvers", data.approver_email)
+    if not approver:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Approver is not on the approvers list")
 
     s = get_settings()
     r = PurchaseRequest(
-        **data.model_dump(),
+        **data.model_dump(exclude={"po_recipients"}),
+        po_recipients=", ".join(data.po_recipients) or None,
+        approver_name=approver.label,
         request_number=_next_number(db),
         requester_email=user.email,
         requester_name=user.name,
-        job_description=job.label,
-        cost_center_name=cc.label,
     )
-    if r.expense_class != "CapEx":
-        r.capex_project_number = None
-    for name, content in pdfs:
-        path = f"{r.request_number}/{uuid.uuid4().hex}.pdf"
-        storage.put(s.blob_attachments_container, path, content, "application/pdf")
+    for name, content in uploads:
+        path = f"{r.request_number}/{uuid.uuid4().hex}{storage.extension(name)}"
+        storage.put(s.blob_attachments_container, path, content, storage.content_type(name))
         r.attachments.append(Attachment(file_name=name, blob_path=path, size_bytes=len(content)))
-    r.history.append(StatusHistory(old_status=None, new_status="Submitted", changed_by=user.email))
+    r.history.append(StatusHistory(old_status=None, new_status="Pending Review", changed_by=user.email))
     db.add(r)
     db.commit()
     log.info("Request %s submitted by %s", r.request_number, user.email)
@@ -152,8 +152,10 @@ def download_attachment(number: str, attachment_id: int, user: User = Depends(ge
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Attachment not found")
     data = storage.get(get_settings().blob_attachments_container, a.blob_path)
     safe = a.file_name.replace('"', "")
-    return StreamingResponse(io.BytesIO(data), media_type="application/pdf",
-                             headers={"Content-Disposition": f'inline; filename="{safe}"'})
+    # PDFs open in the browser; Word/Excel files download.
+    disposition = "inline" if storage.extension(a.file_name) == ".pdf" else "attachment"
+    return StreamingResponse(io.BytesIO(data), media_type=storage.content_type(a.file_name),
+                             headers={"Content-Disposition": f'{disposition}; filename="{safe}"'})
 
 
 @router.patch("/{number}/status", response_model=RequestDetail)

@@ -13,7 +13,7 @@ from .config import get_settings
 from .db import SessionLocal, init_db
 from .models import LookupValue
 from .routers import meta, requests
-from .services import backup, demo, lookups
+from .services import backup, lookups
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("po_intake")
@@ -38,8 +38,6 @@ async def lifespan(_: FastAPI):
     with SessionLocal() as db:
         if not db.scalar(select(func.count()).select_from(LookupValue)):
             lookups.refresh(db, "startup")
-        if settings.demo_mode:
-            demo.seed_if_empty(db)
     scheduler = None
     if settings.scheduler_enabled:
         scheduler = BackgroundScheduler(timezone="UTC")

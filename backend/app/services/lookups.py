@@ -19,12 +19,9 @@ from . import graph
 log = logging.getLogger(__name__)
 
 # list name (API) -> sheet name (workbook)
+# Approvers: column A = email (the code), column B = display name.
 SHEETS = {
-    "request_types": "RequestTypes",
-    "job_numbers": "JobNumbers",
-    "cost_centers": "CostCenters",
-    "vendor_categories": "VendorCategories",
-    "expense_types": "ExpenseTypes",
+    "approvers": "Approvers",
 }
 
 

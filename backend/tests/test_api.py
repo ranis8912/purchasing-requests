@@ -12,30 +12,62 @@ def test_health_and_auth(client):
 
 def test_lookups_loaded_at_startup(client):
     lists = client.get("/api/lookups", headers=ALICE).json()
-    assert [j["code"] for j in lists["job_numbers"]] == ["100001", "100002", "100003"]  # inactive row skipped
-    assert lists["cost_centers"][0] == {"code": "4100", "label": "SAMPLE – Information Technology"}
+    assert [a["code"] for a in lists["approvers"]] == [
+        "approver.one@example.com", "approver.two@example.com", "approver.three@example.com"]  # inactive row skipped
+    assert lists["approvers"][0]["label"] == "SAMPLE – Approver One"
+    assert "Late PO Request" in lists["urgent_reasons"]
 
 
 def test_submit_saves_request_and_sends_email(client):
     r = submit(client, ALICE)
     assert r.status_code == 201, r.text
     body = r.json()
-    assert body["request_number"].startswith("PR-") and body["status"] == "Submitted"
+    assert body["request_number"].startswith("PR-") and body["status"] == "Pending Review"
     assert body["email_status"] == "Sent"  # local mode writes to the outbox folder
-    assert body["job_description"] == "SAMPLE – Corporate IT"
+    assert body["approver_name"] == "SAMPLE – Approver One"
+    assert body["project_number"] == "012345678" and body["cost_center"] == "0410"  # leading zeroes kept
+    assert body["po_recipients"] == "ap@ges.com"
     assert body["attachments"][0]["file_name"] == "sow.pdf"
     pdf = client.get(f"/api/requests/{body['request_number']}/attachments/{body['attachments'][0]['id']}", headers=ALICE)
     assert pdf.content.startswith(b"%PDF-")
 
 
 def test_validation(client):
+    from datetime import date, timedelta
+    ok = lambda **kw: submit(client, ALICE, **kw).status_code  # noqa: E731
     assert submit(client, ALICE, files=[]).status_code == 422
     assert submit(client, ALICE, files=[("files", ("x.pdf", b"MZ not a pdf", "application/pdf"))]).status_code == 422
-    assert submit(client, ALICE, expense_class="CapEx").status_code == 422  # needs project number
-    assert submit(client, ALICE, expense_class="CapEx", capex_project_number="CP-1").status_code == 201
-    assert submit(client, ALICE, is_new_vendor=True).status_code == 422  # needs contact
-    assert submit(client, ALICE, job_number="999999").status_code == 422
-    assert submit(client, ALICE, amount=0).status_code == 422
+    assert submit(client, ALICE, files=[("files", ("x.exe", b"MZ", "application/octet-stream"))]).status_code == 422
+    assert submit(client, ALICE, files=[("files", ("x.doc", b"%PDF-1.4", "application/msword"))]).status_code == 422
+    # Project number: exactly 9 digits; cost center: exactly 4 digits
+    for bad in ["12345678", "1234567890", "12345678a", ""]:
+        assert ok(project_number=bad) == 422, bad
+    for bad in ["123", "12345", "12a4"]:
+        assert ok(cost_center=bad) == 422, bad
+    # Conditional fields
+    assert ok(is_po_extension=True) == 422
+    assert ok(is_po_extension=True, previous_po="PO12345") == 201
+    assert ok(is_capital_project=True) == 422
+    assert ok(is_capital_project=True, capital_project_number="CP-1") == 201
+    assert ok(agreement_signed=True) == 422
+    assert ok(agreement_signed=True, signature_date=str(date.today() + timedelta(days=1))) == 422
+    assert ok(agreement_signed=True, signature_date=str(date.today())) == 201
+    assert ok(is_urgent=True) == 422
+    assert ok(is_urgent=True, urgent_reason="Not a reason") == 422
+    assert ok(is_urgent=True, urgent_reason="Commercial Deadline") == 201
+    # Dates, amount, approver, recipients
+    assert ok(end_date="2025-12-31") == 422
+    assert ok(start_date=None) == 422
+    assert ok(amount=0) == 422
+    assert ok(approver_email="someone.else@ges.com") == 422
+    assert ok(po_recipients=["not-an-email"]) == 422
+    assert ok(supplier_name="") == 422
+
+
+def test_hidden_answers_are_cleared(client):
+    body = submit(client, ALICE, is_po_extension=False, previous_po="PO999", agreement_signed=False,
+                  signature_date="2026-01-01", is_urgent=False, urgent_reason="Commercial Deadline").json()
+    assert body["previous_po"] is None and body["signature_date"] is None and body["urgent_reason"] is None
 
 
 def test_requesters_only_see_their_own(client):
@@ -81,16 +113,13 @@ def test_admin_by_group_claim(client, monkeypatch):
     assert client.get("/api/me", headers=principal("x@ges.com")).json()["is_admin"] is False
 
 
-def test_demo_seed(client, monkeypatch):
-    from app.config import get_settings
-    from app.db import SessionLocal
-    from app.services import demo
-    monkeypatch.setattr(get_settings(), "app_env", "dev")
-    with SessionLocal() as db:
-        try:
-            demo.seed(db, 2)
-            raise AssertionError("seed must refuse outside local/demo")
-        except RuntimeError:
-            pass
-        monkeypatch.setattr(get_settings(), "demo_mode", True)
-        assert demo.seed(db, 3) == 3
+
+def test_word_and_excel_attachments(client):
+    ole, zipped = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1rest", b"PK\x03\x04rest"
+    files = [("files", ("quote.xls", ole, "application/vnd.ms-excel")), ("files", ("sow.doc", ole, "application/msword")),
+             ("files", ("order.xlsx", zipped, "application/octet-stream")), ("files", ("sow.docx", zipped, "application/octet-stream"))]
+    body = submit(client, ALICE, files=files).json()
+    assert [a["file_name"] for a in body["attachments"]] == ["quote.xls", "sow.doc", "order.xlsx", "sow.docx"]
+    dl = client.get(f"/api/requests/{body['request_number']}/attachments/{body['attachments'][0]['id']}", headers=ALICE)
+    assert dl.content == ole and dl.headers["content-type"] == "application/vnd.ms-excel"
+    assert dl.headers["content-disposition"].startswith("attachment;")

@@ -3,13 +3,8 @@
 export type Me = { email: string; name: string; is_admin: boolean; demo_mode: boolean; email_live: boolean };
 export type Option = { code: string; label: string };
 export type Lookups = {
-  request_types: Option[];
-  job_numbers: Option[];
-  cost_centers: Option[];
-  vendor_categories: Option[];
-  expense_types: Option[];
-  currencies: string[];
-  billing_types: string[];
+  approvers: Option[];
+  urgent_reasons: string[];
   statuses: string[];
 };
 
@@ -18,36 +13,29 @@ export type RequestSummary = {
   submitted_at: string;
   requester_name: string;
   requester_email: string;
-  request_type: string;
-  title: string;
-  job_number: string;
+  supplier_name: string;
+  project_number: string;
   cost_center: string;
-  vendor_name: string;
-  expense_class: "OpEx" | "CapEx";
+  is_capital_project: boolean;
   amount: number;
-  currency: string;
-  needed_by: string | null;
+  start_date: string;
+  is_urgent: boolean;
+  urgent_reason: string | null;
   status: string;
   email_status: "Pending" | "Sent" | "Failed";
 };
 
 export type RequestDetail = RequestSummary & {
-  department: string | null;
-  job_description: string | null;
-  cost_center_name: string | null;
-  is_new_vendor: boolean;
-  vendor_category: string;
-  vendor_contact_name: string | null;
-  vendor_contact_email: string | null;
-  expense_type: string;
-  capex_project_number: string | null;
-  billing_type: string;
-  start_date: string | null;
-  end_date: string | null;
-  is_budgeted: boolean;
-  nda_in_place: boolean;
-  vendor_data_access: boolean;
-  description: string;
+  approver_email: string;
+  approver_name: string;
+  po_recipients: string | null;
+  is_po_extension: boolean;
+  previous_po: string | null;
+  capital_project_number: string | null;
+  end_date: string;
+  agreement_signed: boolean;
+  signature_date: string | null;
+  description: string | null;
   email_error: string | null;
   email_sent_at: string | null;
   admin_notes: string | null;

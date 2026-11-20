@@ -1,11 +1,11 @@
 # GES Purchasing Request Portal
 
-Interim intake tool for the Purchasing team (until Ironclad). Requesters submit SOWs, requisitions, POs and contracts through a guided form with their PDFs attached. Purchasing gets one complete email, and everyone can track status.
+Interim IT procurement requisition intake (until Ironclad), built to the *IT Procurement Requisition Form – Pilot Functional Requirements*. Requesters fill in a validated form (stakeholders, project costing, SOW/quote/order form, urgency) with their PDFs attached. Submit unlocks only when every required field passes validation. On submit the request is time-stamped, set to **Pending Review**, added to the queue, and emailed out.
 
 - **Requesters:** dashboard of their own requests, the New Request form, and request history with status.
 - **Purchasing admins (`Admin` app role):** every request, status updates with timeline notes, internal notes, email resend, CSV export, and a lists refresh.
-- **Email:** one message per submission, From/To the PO shared mailbox, CC + Reply-To the requester, PDFs attached (Microsoft Graph).
-- **Lists** (request types, job numbers, cost centers, vendor categories, expense types) come from the `PO Intake Lists.xlsx` workbook in SharePoint and refresh nightly. Oracle can replace the source later without changing the app.
+- **Email:** one message per submission from the PO shared mailbox to `EMAIL_TO` (PO mailbox plus the Procurement reviewers), CC + Reply-To the requester, PDFs attached (Microsoft Graph). The approver and the additional PO recipients are stored but not emailed.
+- **Approvers list** (people with Oracle approval access) comes from the `PO Intake Lists.xlsx` workbook in SharePoint and refreshes nightly. Project number (9 digits) and task / cost center (4 digits) are typed in and stored as text. Oracle can replace the source later without changing the app.
 
 **Stack:** React + Vite + TypeScript frontend, FastAPI backend, SQLite on `/home/data`, Blob Storage for PDFs and backups, Easy Auth (Entra ID), on one Linux App Service with a private endpoint: `app-wus2-purreq-dv` (resource group `rg-wus2-purreq-dv-services`, subscription GES-AIS-Dv), reachable at https://dv-gespurchasingrequests.ges.com.
 
@@ -23,7 +23,6 @@ cd backend
 python -m venv .venv
 .venv\Scripts\python -m pip install -r requirements-dev.txt
 copy .env.example .env            # AUTH_MODE=dev signs you in as a fake admin
-.venv\Scripts\python scripts\seed_demo.py   # optional: demo requests for the dashboard
 .venv\Scripts\python -m uvicorn app.main:app --reload --port 8000
 
 # Frontend (terminal 2)
@@ -78,7 +77,7 @@ After deploying, open https://dv-gespurchasingrequests.ges.com in an InPrivate w
 | `APP_ENV` | `dev` |
 | `AUTH_MODE` | `easyauth` |
 | `AZURE_AD_ADMIN_GROUP_ID` | Object ID of the Purchasing admins group |
-| `DEMO_MODE` | `true` only for a demo: sample lists and fake requests seeded on first start. Emails are sent if `GRAPH_*` is set, otherwise written to `/home/data/outbox`. Remove for real use. |
+| `DEMO_MODE` | `true` only for a demo: sample lists instead of SharePoint. Emails are sent if `GRAPH_*` is set, otherwise written to `/home/data/outbox`. Remove for real use. |
 | `APP_BASE_URL` | `https://app-wus2-purreq-dv.azurewebsites.net` |
 | `DB_PATH` | `/home/data/po_intake.db` |
 | `GRAPH_APP_ID`, `GRAPH_TENANT_ID` | Graph app registration (separate from the Easy Auth one) |
@@ -103,9 +102,9 @@ There must be no `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` / `AZURE_TENANT_ID` s
 - The App Service managed identity needs **Storage Blob Data Contributor**.
 
 ### Lists workbook
-`PO Intake Lists.xlsx` in the SharePoint folder, with sheets `RequestTypes`, `JobNumbers`, `CostCenters`, `VendorCategories` and `ExpenseTypes`:
-- Column A is the code or value.
-- Column B is the description (optional).
+`PO Intake Lists.xlsx` in the SharePoint folder, with an `Approvers` sheet:
+- Column A is the approver's email.
+- Column B is their display name.
 - An optional `Active` column (`N` hides a row).
 
 Use `backend/sample_data/PO Intake Lists.xlsx` as the template. A refresh that finds a problem (missing sheet, duplicate code) keeps the previous lists and shows the error on the Admin page.

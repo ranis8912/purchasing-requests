@@ -42,10 +42,10 @@ def client():
 
 def form(**overrides) -> dict:
     data = {
-        "request_type": "New SOW", "title": "Network assessment", "department": "IT",
-        "job_number": "100001", "cost_center": "4100", "vendor_name": "Acme Consulting",
-        "is_new_vendor": False, "vendor_category": "Software / SaaS", "expense_class": "OpEx",
-        "expense_type": "Services", "amount": 85000, "currency": "USD", "billing_type": "Fixed fee",
+        "approver_email": "approver.one@example.com", "po_recipients": ["ap@ges.com"],
+        "is_po_extension": False, "is_capital_project": False,
+        "project_number": "012345678", "cost_center": "0410", "supplier_name": "Acme Consulting",
+        "start_date": "2026-01-01", "end_date": "2026-12-31", "agreement_signed": False, "amount": 85000,
         "description": "Annual network assessment for all show sites.",
     }
     data.update(overrides)

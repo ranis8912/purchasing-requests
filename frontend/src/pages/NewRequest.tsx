@@ -1,10 +1,10 @@
 import { forwardRef, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router";
-import { Controller, useForm, type FieldError } from "react-hook-form";
+import { Controller, useForm, type Control, type FieldError, type Path } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, FileText, FileUp, Mail, Send, ShieldAlert, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileText, FileUp, Info, Mail, Send, X } from "lucide-react";
 import { getLookups, submitRequest, type RequestDetail } from "../api";
 import { fileSize, money } from "../format";
 import Combobox from "../components/Combobox";
@@ -12,46 +12,46 @@ import { EmailBadge, ErrorBox, PageLoader, Spinner, useMe, useToast } from "../c
 
 const MAX_FILES = 5;
 const MAX_MB = 20;
-const req = (label: string) => z.string().trim().min(1, `${label} is required`);
+const EXTENSIONS = [".pdf", ".doc", ".docx", ".xls", ".xlsx"];
+const yesNo = z.boolean({ error: "Choose Yes or No" });
+const splitEmails = (s?: string) => (s ?? "").split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean);
+// Local calendar date as YYYY-MM-DD, for the "not in the future" check.
+const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
 
 const schema = z.object({
-  request_type: req("Request type"),
-  title: z.string().trim().min(3, "Give the request a short title"),
-  department: z.string().trim().optional(),
-  needed_by: z.string().optional(),
-  job_number: req("Job number"),
-  cost_center: req("Cost center"),
-  vendor_name: z.string().trim().min(2, "Vendor name is required"),
-  is_new_vendor: z.boolean(),
-  vendor_category: req("Vendor category"),
-  vendor_contact_name: z.string().trim().optional(),
-  vendor_contact_email: z.string().trim().optional(),
-  expense_class: z.enum(["OpEx", "CapEx"], { error: "Choose OpEx or CapEx" }),
-  expense_type: req("Expense type"),
-  capex_project_number: z.string().trim().optional(),
-  amount: z.number({ error: "Enter the total amount" }).positive("Amount must be more than 0"),
-  currency: z.string(),
-  billing_type: req("Billing type"),
-  start_date: z.string().optional(),
-  end_date: z.string().optional(),
-  is_budgeted: z.boolean(),
-  nda_in_place: z.boolean(),
-  vendor_data_access: z.boolean(),
-  description: z.string().trim().min(10, "Add a few sentences on what this is for (10+ characters)"),
+  approver_email: z.string().min(1, "Approver is required"),
+  po_recipients: z.string().optional(),
+  is_po_extension: yesNo,
+  previous_po: z.string().trim().optional(),
+  is_capital_project: yesNo,
+  capital_project_number: z.string().trim().optional(),
+  project_number: z.string().trim().regex(/^\d{9}$/, "Project number must be exactly 9 digits"),
+  cost_center: z.string().trim().regex(/^\d{4}$/, "Task / cost center must be exactly 4 digits"),
+  supplier_name: z.string().trim().min(2, "Supplier name is required"),
+  start_date: z.string().min(1, "Start date is required"),
+  end_date: z.string().min(1, "End date is required"),
+  agreement_signed: yesNo,
+  signature_date: z.string().optional(),
+  amount: z.number({ error: "Enter the total value" }).positive("Value must be more than $0"),
+  is_urgent: z.boolean(),
+  urgent_reason: z.string().optional(),
+  description: z.string().trim().optional(),
 }).superRefine((v, ctx) => {
-  if (v.is_new_vendor && !v.vendor_contact_name) ctx.addIssue({ code: "custom", path: ["vendor_contact_name"], message: "Contact name is required for new vendors" });
-  if (v.is_new_vendor && !z.email().safeParse(v.vendor_contact_email).success)
-    ctx.addIssue({ code: "custom", path: ["vendor_contact_email"], message: "Enter a valid contact email" });
-  if (v.expense_class === "CapEx" && !v.capex_project_number) ctx.addIssue({ code: "custom", path: ["capex_project_number"], message: "Capital project number is required for CapEx" });
-  if (v.start_date && v.end_date && v.end_date < v.start_date) ctx.addIssue({ code: "custom", path: ["end_date"], message: "End date is before start date" });
+  const issue = (path: string, message: string) => ctx.addIssue({ code: "custom", path: [path], message });
+  const bad = splitEmails(v.po_recipients).filter((e) => !z.email().safeParse(e).success);
+  if (bad.length) issue("po_recipients", `Not a valid email: ${bad.join(", ")}`);
+  if (v.is_po_extension && !v.previous_po) issue("previous_po", "Previous PO is required for an extension / add-on");
+  if (v.is_capital_project && !v.capital_project_number) issue("capital_project_number", "Capital project number is required");
+  if (v.start_date && v.end_date && v.end_date < v.start_date) issue("end_date", "End date can't be before the start date");
+  if (v.agreement_signed && !v.signature_date) issue("signature_date", "Date of signature is required");
+  if (v.agreement_signed && v.signature_date && v.signature_date > today()) issue("signature_date", "Date of signature can't be in the future");
+  if (v.is_urgent && !v.urgent_reason) issue("urgent_reason", "Choose a reason");
 });
 type FormValues = z.infer<typeof schema>;
 
 const DEFAULTS: Partial<FormValues> = {
-  request_type: "", title: "", department: "", needed_by: "", job_number: "", cost_center: "", vendor_name: "",
-  is_new_vendor: false, vendor_category: "", vendor_contact_name: "", vendor_contact_email: "", expense_type: "",
-  capex_project_number: "", currency: "USD", billing_type: "", start_date: "", end_date: "",
-  is_budgeted: true, nda_in_place: false, vendor_data_access: false, description: "",
+  approver_email: "", po_recipients: "", previous_po: "", capital_project_number: "", project_number: "", cost_center: "",
+  supplier_name: "", start_date: "", end_date: "", signature_date: "", is_urgent: false, urgent_reason: "", description: "",
 };
 
 function Field({ label, error, required, hint, span, htmlFor, children }: {
@@ -85,24 +85,37 @@ const Toggle = forwardRef<HTMLInputElement, { label: string } & React.InputHTMLA
   ),
 );
 
+/** Required Yes/No: starts unanswered so the requester has to choose. */
+function YesNo({ control, name, label }: { control: Control<FormValues>; name: Path<FormValues>; label: string }) {
+  return (
+    <Controller control={control} name={name} render={({ field }) => (
+      <div className="segmented" role="group" aria-label={label}>
+        {([["Yes", true], ["No", false]] as const).map(([text, v]) => (
+          <button key={text} type="button" aria-pressed={field.value === v} onClick={() => { field.onChange(v); field.onBlur(); }}>{text}</button>
+        ))}
+      </div>
+    )} />
+  );
+}
+
 function Success({ r, onAnother }: { r: RequestDetail; onAnother: () => void }) {
   return (
     <div className="page">
       <div className="card success">
         <div className="success__icon"><CheckCircle2 size={40} aria-hidden /></div>
-        <h1>Request submitted</h1>
+        <h1>Requisition submitted</h1>
         <div className="ref">{r.request_number}</div>
         <p className="muted" style={{ margin: "0 0 8px" }}>
-          {r.request_type} · {r.vendor_name} · {money(r.amount, r.currency)}
+          {r.supplier_name} · {money(r.amount)} · {r.status}
         </p>
         <p style={{ margin: "0 0 18px" }}><EmailBadge status={r.email_status} /></p>
         <p className="muted">
           {r.email_status === "Sent"
-            ? "Purchasing has your request and documents. You were copied on the email, and replies from Purchasing come straight to you."
-            : "Your request is saved. The email to Purchasing didn't go out yet; the Purchasing team can see it and will resend it."}
+            ? "Procurement has your requisition and documents. You were copied on the email, and replies from Procurement come straight to you."
+            : "Your requisition is saved. The email to Procurement didn't go out yet; the Procurement team can see it and will resend it."}
         </p>
         <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 22 }}>
-          <Link to={`/requests/${r.request_number}`} className="btn btn-primary">View request</Link>
+          <Link to={`/requests/${r.request_number}`} className="btn btn-primary">View requisition</Link>
           <button type="button" className="btn btn-secondary" onClick={onAnother}>Submit another</button>
         </div>
       </div>
@@ -121,23 +134,21 @@ export default function NewRequest() {
   const [done, setDone] = useState<RequestDetail | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const { register, control, handleSubmit, watch, reset, formState: { errors } } = useForm<FormValues>({
-    resolver: zodResolver(schema), defaultValues: DEFAULTS, mode: "onTouched",
+  const { register, control, handleSubmit, watch, reset, formState: { errors, isValid } } = useForm<FormValues>({
+    resolver: zodResolver(schema), defaultValues: DEFAULTS, mode: "onChange",
   });
-  const isNewVendor = watch("is_new_vendor");
-  const expenseClass = watch("expense_class");
-  const dataAccess = watch("vendor_data_access");
-  const amount = watch("amount");
-  const currency = watch("currency");
+  const [isExtension, isCapital, signed, urgent, amount] =
+    watch(["is_po_extension", "is_capital_project", "agreement_signed", "is_urgent", "amount"]);
 
   const mutation = useMutation({
     mutationFn: (v: FormValues) => {
       const blankToNull = (s?: string) => (s ? s : null);
       return submitRequest({
         ...v,
-        department: blankToNull(v.department), needed_by: blankToNull(v.needed_by), start_date: blankToNull(v.start_date),
-        end_date: blankToNull(v.end_date), vendor_contact_name: blankToNull(v.vendor_contact_name),
-        vendor_contact_email: blankToNull(v.vendor_contact_email), capex_project_number: blankToNull(v.capex_project_number),
+        po_recipients: splitEmails(v.po_recipients),
+        previous_po: blankToNull(v.previous_po), capital_project_number: blankToNull(v.capital_project_number),
+        signature_date: blankToNull(v.signature_date), urgent_reason: blankToNull(v.urgent_reason),
+        description: blankToNull(v.description),
       }, files);
     },
     onSuccess: (r) => {
@@ -147,13 +158,15 @@ export default function NewRequest() {
     },
     onError: (e) => toast(e instanceof Error ? e.message : "Submit failed", true),
   });
+  // Submit unlocks only once everything required passes validation.
+  const canSubmit = isValid && files.length > 0 && !mutation.isPending;
 
   function addFiles(list: FileList | null) {
     if (!list) return;
     setFileError("");
     const next = [...files];
     for (const f of Array.from(list)) {
-      if (!f.name.toLowerCase().endsWith(".pdf") && f.type !== "application/pdf") { setFileError(`"${f.name}" isn't a PDF.`); continue; }
+      if (!EXTENSIONS.some((x) => f.name.toLowerCase().endsWith(x))) { setFileError(`"${f.name}" isn't a PDF, Word or Excel file.`); continue; }
       if (f.size > MAX_MB * 1024 * 1024) { setFileError(`"${f.name}" is over ${MAX_MB} MB.`); continue; }
       if (next.some((x) => x.name === f.name && x.size === f.size)) continue;
       if (next.length >= MAX_FILES) { setFileError(`You can attach up to ${MAX_FILES} files.`); break; }
@@ -162,149 +175,91 @@ export default function NewRequest() {
     setFiles(next);
   }
 
-  const onSubmit = handleSubmit((v) => {
-    if (files.length === 0) { setFileError("Attach the SOW, quote or contract (PDF)."); return; }
-    mutation.mutate(v);
-  }, () => {
-    if (files.length === 0) setFileError("Attach the SOW, quote or contract (PDF).");
-    toast("Some required details are missing. Check the highlighted fields.", true);
-  });
+  const onSubmit = handleSubmit((v) => mutation.mutate(v));
 
   if (done) return <Success r={done} onAnother={() => { setDone(null); reset(DEFAULTS); setFiles([]); }} />;
   if (isLoading) return <PageLoader />;
   if (error || !lists) return <div className="page"><ErrorBox error={error} /></div>;
 
-  const options = (xs: { code: string; label: string }[]) => xs.map((o) => <option key={o.code} value={o.code}>{o.label}</option>);
-
   return (
     <div className="page">
       <div className="page-head">
         <div>
-          <h1>New purchasing request</h1>
-          <p>Fields marked <span className="req">*</span> are required. Purchasing gets everything in one email, with your PDFs attached.</p>
+          <h1>New IT procurement requisition</h1>
+          <p>Fields marked <span className="req">*</span> are required. Submit unlocks once every required field is complete.</p>
         </div>
       </div>
 
       <form className="card" onSubmit={onSubmit} noValidate>
-        <Section step={1} title="Request" intro="What do you need Purchasing to do?">
-          <Field label="Request type" required error={errors.request_type} htmlFor="request_type">
-            <select id="request_type" className="select" {...register("request_type")}>
-              <option value="">Select…</option>{options(lists.request_types)}
-            </select>
-          </Field>
-          <Field label="Needed by" error={errors.needed_by} htmlFor="needed_by" hint="Leave blank if there's no hard deadline">
-            <input id="needed_by" type="date" className="input" {...register("needed_by")} />
-          </Field>
-          <Field label="Title" required span error={errors.title} htmlFor="title" hint="A short name Purchasing will recognise, e.g. “2027 Show Wi-Fi services”">
-            <input id="title" className="input" maxLength={200} {...register("title")} />
-          </Field>
-          <Field label="Requested by" htmlFor="requester">
+        <Section step={1} title="Stakeholders" intro="Who approves in Oracle, and who should receive the final PO.">
+          <Field label="Requester" htmlFor="requester">
             <input id="requester" className="input" value={me ? `${me.name} (${me.email})` : ""} disabled />
           </Field>
-          <Field label="Department" error={errors.department} htmlFor="department">
-            <input id="department" className="input" maxLength={200} {...register("department")} />
+          <Field label="Approver" required error={errors.approver_email} htmlFor="approver_email" hint="Someone with Oracle approval access">
+            <Controller control={control} name="approver_email" render={({ field }) => (
+              <Combobox id="approver_email" options={lists.approvers} value={field.value} invalid={!!errors.approver_email}
+                onChange={(c) => { field.onChange(c); field.onBlur(); }} placeholder="Search by name or email" />
+            )} />
+          </Field>
+          <Field label="Additional PO recipients" span error={errors.po_recipients} htmlFor="po_recipients"
+            hint="Optional. Email addresses of people who should receive the final PO, separated by commas.">
+            <input id="po_recipients" className="input" {...register("po_recipients")} placeholder="name@ges.com, other@ges.com" />
           </Field>
         </Section>
 
-        <Section step={2} title="Charge to" intro="Which job and cost center will this be billed to?">
-          <Field label="Job number" required error={errors.job_number} htmlFor="job_number">
-            <Controller control={control} name="job_number" render={({ field }) => (
-              <Combobox id="job_number" options={lists.job_numbers} value={field.value} invalid={!!errors.job_number}
-                onChange={(c) => { field.onChange(c); field.onBlur(); }} placeholder="Search by number or name" />
-            )} />
+        <Section step={2} title="Project costing" intro="Where the cost is charged. Project and task numbers keep their leading zeroes.">
+          <Field label="PO extension / add-on" required error={errors.is_po_extension}>
+            <YesNo control={control} name="is_po_extension" label="PO extension / add-on" />
           </Field>
-          <Field label="Cost center" required error={errors.cost_center} htmlFor="cost_center">
-            <Controller control={control} name="cost_center" render={({ field }) => (
-              <Combobox id="cost_center" options={lists.cost_centers} value={field.value} invalid={!!errors.cost_center}
-                onChange={(c) => { field.onChange(c); field.onBlur(); }} placeholder="Search by code or name" />
-            )} />
+          {isExtension ? (
+            <Field label="Previous PO" required error={errors.previous_po} htmlFor="previous_po">
+              <input id="previous_po" className="input" maxLength={50} {...register("previous_po")} />
+            </Field>
+          ) : <div className="field" />}
+          <Field label="Capital project" required error={errors.is_capital_project}>
+            <YesNo control={control} name="is_capital_project" label="Capital project" />
+          </Field>
+          {isCapital ? (
+            <Field label="Capital project number" required error={errors.capital_project_number} htmlFor="capital_project_number">
+              <input id="capital_project_number" className="input" maxLength={50} {...register("capital_project_number")} />
+            </Field>
+          ) : <div className="field" />}
+          <Field label="Project number" required error={errors.project_number} htmlFor="project_number" hint="Exactly 9 digits">
+            <input id="project_number" className="input mono" inputMode="numeric" maxLength={9} {...register("project_number")} />
+          </Field>
+          <Field label="Task / cost center" required error={errors.cost_center} htmlFor="cost_center" hint="Exactly 4 digits">
+            <input id="cost_center" className="input mono" inputMode="numeric" maxLength={4} {...register("cost_center")} />
           </Field>
         </Section>
 
-        <Section step={3} title="Vendor" intro="Who is the supplier? New vendors need a contact so Purchasing can set them up.">
-          <Field label="Vendor name" required error={errors.vendor_name} htmlFor="vendor_name">
-            <input id="vendor_name" className="input" maxLength={200} {...register("vendor_name")} />
+        <Section step={3} title="SOW / quote / order form" intro={`The agreement details and the documents. PDF, Word or Excel, up to ${MAX_FILES} files, ${MAX_MB} MB each.`}>
+          <Field label="Supplier name" required span error={errors.supplier_name} htmlFor="supplier_name">
+            <input id="supplier_name" className="input" maxLength={200} {...register("supplier_name")} />
           </Field>
-          <Field label="Vendor category" required error={errors.vendor_category} htmlFor="vendor_category">
-            <select id="vendor_category" className="select" {...register("vendor_category")}>
-              <option value="">Select…</option>{options(lists.vendor_categories)}
-            </select>
+          <div className="alert alert-info" style={{ gridColumn: "1 / -1" }}>
+            <Info size={18} aria-hidden /><div>The supplier must be set up in Oracle before a PO can be raised.</div>
+          </div>
+          <Field label="Service start date" required error={errors.start_date} htmlFor="start_date">
+            <input id="start_date" type="date" className="input" {...register("start_date", { deps: ["end_date"] })} />
           </Field>
-          <div className="field span-2"><Toggle label="This is a new vendor (not yet set up at GES)" {...register("is_new_vendor")} /></div>
-          {isNewVendor && (
-            <div className="reveal">
-              <Field label="Vendor contact name" required error={errors.vendor_contact_name} htmlFor="vendor_contact_name">
-                <input id="vendor_contact_name" className="input" {...register("vendor_contact_name")} />
-              </Field>
-              <Field label="Vendor contact email" required error={errors.vendor_contact_email} htmlFor="vendor_contact_email">
-                <input id="vendor_contact_email" type="email" className="input" {...register("vendor_contact_email")} />
-              </Field>
-            </div>
-          )}
-        </Section>
-
-        <Section step={4} title="Financials" intro="How much, how it's billed, and whether it's operating or capital spend.">
-          <Field label="OpEx or CapEx" required error={errors.expense_class as FieldError | undefined}>
-            <Controller control={control} name="expense_class" render={({ field }) => (
-              <div className="segmented" role="group" aria-label="OpEx or CapEx">
-                {(["OpEx", "CapEx"] as const).map((v) => (
-                  <button key={v} type="button" aria-pressed={field.value === v} onClick={() => { field.onChange(v); field.onBlur(); }}>{v}</button>
-                ))}
-              </div>
-            )} />
-          </Field>
-          <Field label="Expense type" required error={errors.expense_type} htmlFor="expense_type">
-            <select id="expense_type" className="select" {...register("expense_type")}>
-              <option value="">Select…</option>{options(lists.expense_types)}
-            </select>
-          </Field>
-          {expenseClass === "CapEx" && (
-            <div className="reveal">
-              <Field label="Capital project number" required error={errors.capex_project_number} htmlFor="capex_project_number">
-                <input id="capex_project_number" className="input" {...register("capex_project_number")} />
-              </Field>
-            </div>
-          )}
-          <Field label="Total amount" required error={errors.amount} htmlFor="amount"
-            hint={amount > 0 ? money(amount, currency) : "Total value of the SOW, PO or contract"}>
-            <div style={{ display: "flex", gap: 8 }}>
-              <input id="amount" type="number" min="0" step="0.01" inputMode="decimal" className="input" {...register("amount", { valueAsNumber: true })} />
-              <select className="select" style={{ width: 96 }} aria-label="Currency" {...register("currency")}>
-                {lists.currencies.map((c) => <option key={c}>{c}</option>)}
-              </select>
-            </div>
-          </Field>
-          <Field label="Billing" required error={errors.billing_type} htmlFor="billing_type">
-            <select id="billing_type" className="select" {...register("billing_type")}>
-              <option value="">Select…</option>{lists.billing_types.map((b) => <option key={b}>{b}</option>)}
-            </select>
-          </Field>
-          <Field label="Start date" error={errors.start_date} htmlFor="start_date">
-            <input id="start_date" type="date" className="input" {...register("start_date")} />
-          </Field>
-          <Field label="End date" error={errors.end_date} htmlFor="end_date">
+          <Field label="Service end date" required error={errors.end_date} htmlFor="end_date">
             <input id="end_date" type="date" className="input" {...register("end_date")} />
           </Field>
-          <div className="field span-2"><Toggle label="This spend is in the approved budget" {...register("is_budgeted")} /></div>
-        </Section>
-
-        <Section step={5} title="Risk & compliance" intro="Helps Purchasing spot when legal or IT security needs to be involved.">
-          <div className="field"><Toggle label="NDA already in place" {...register("nda_in_place")} /></div>
-          <div className="field"><Toggle label="Vendor will access GES data or systems" {...register("vendor_data_access")} /></div>
-          {dataAccess && (
-            <div className="alert alert-warn span-2" style={{ gridColumn: "1 / -1" }}>
-              <ShieldAlert size={18} aria-hidden /><div>Vendors that access GES data or systems may need an IT security review. Purchasing will let you know.</div>
-            </div>
-          )}
-        </Section>
-
-        <Section step={6} title="Details & documents" intro={`Explain the business need and attach the SOW, quote or contract. PDF only, up to ${MAX_FILES} files, ${MAX_MB} MB each.`}>
-          <Field label="Description / business justification" required span error={errors.description} htmlFor="description">
-            <textarea id="description" className="textarea" maxLength={5000} {...register("description")}
-              placeholder="What is being purchased, why, and anything Purchasing should know (renewal of an existing contract, sole source, deadlines)…" />
+          <Field label="Agreement signed" required error={errors.agreement_signed}>
+            <YesNo control={control} name="agreement_signed" label="Agreement signed" />
           </Field>
+          {signed ? (
+            <Field label="Date of signature" required error={errors.signature_date} htmlFor="signature_date">
+              <input id="signature_date" type="date" className="input" max={today()} {...register("signature_date")} />
+            </Field>
+          ) : <div className="field" />}
+          <Field label="Total order form / SOW value (USD)" required error={errors.amount} htmlFor="amount"
+            hint={amount > 0 ? `${money(amount)} · must match the supporting documents` : "Must match the supporting documents"}>
+            <input id="amount" type="number" min="0" step="0.01" inputMode="decimal" className="input" {...register("amount", { valueAsNumber: true })} />
+          </Field>
+          <div className="field" />
           <div className={`field span-2 ${fileError ? "invalid" : ""}`}>
-            <span className="label">Attachments<span className="req" aria-hidden>*</span></span>
+            <span className="label">Supporting documents<span className="req" aria-hidden>*</span></span>
             <div
               className={`drop ${drag ? "drag" : ""}`} role="button" tabIndex={0}
               onClick={() => fileInput.current?.click()}
@@ -313,9 +268,9 @@ export default function NewRequest() {
               onDrop={(e) => { e.preventDefault(); setDrag(false); addFiles(e.dataTransfer.files); }}
             >
               <div className="drop__icon"><FileUp size={22} aria-hidden /></div>
-              <div><strong>Click to choose PDFs</strong> or drag them here</div>
-              <div className="small muted">SOW, quote, contract or supporting documents</div>
-              <input ref={fileInput} type="file" accept="application/pdf,.pdf" multiple hidden
+              <div><strong>Click to choose files</strong> or drag them here</div>
+              <div className="small muted">SOW, quote or order form (PDF, Word or Excel, including .doc and .xls)</div>
+              <input ref={fileInput} type="file" accept={EXTENSIONS.join(",")} multiple hidden
                 onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
             </div>
             {fileError && <span className="field-error" role="alert">{fileError}</span>}
@@ -334,15 +289,32 @@ export default function NewRequest() {
           </div>
         </Section>
 
+        <Section step={4} title="Urgency & notes" intro="Mark the request urgent only when there's a real deadline or risk.">
+          <div className="field"><Toggle label="Urgent request" {...register("is_urgent")} /></div>
+          {urgent ? (
+            <Field label="Urgent reason" required error={errors.urgent_reason} htmlFor="urgent_reason">
+              <select id="urgent_reason" className="select" {...register("urgent_reason")}>
+                <option value="">Select…</option>{lists.urgent_reasons.map((r) => <option key={r}>{r}</option>)}
+              </select>
+            </Field>
+          ) : <div className="field" />}
+          <Field label="Description / notes" span error={errors.description} htmlFor="description" hint="Optional. Anything Procurement should know.">
+            <textarea id="description" className="textarea" maxLength={5000} {...register("description")} />
+          </Field>
+        </Section>
+
         <div className="form-footer">
           <span className="small muted" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Mail size={16} aria-hidden /> Sent to the Purchasing mailbox. You'll be copied, and replies come to you.
+            <Mail size={16} aria-hidden />
+            {canSubmit || mutation.isPending
+              ? "Procurement is notified and you're copied. Replies come to you."
+              : "Complete every required field and attach the documents to submit."}
           </span>
           <div style={{ display: "flex", gap: 10 }}>
             <button type="button" className="btn btn-secondary" disabled={mutation.isPending}
               onClick={() => { reset(DEFAULTS); setFiles([]); setFileError(""); }}>Clear</button>
-            <button type="submit" className="btn btn-primary btn-lg" disabled={mutation.isPending}>
-              {mutation.isPending ? <><Spinner /> Submitting…</> : <><Send size={17} aria-hidden /> Submit request</>}
+            <button type="submit" className="btn btn-primary btn-lg" disabled={!canSubmit}>
+              {mutation.isPending ? <><Spinner /> Submitting…</> : <><Send size={17} aria-hidden /> Submit requisition</>}
             </button>
           </div>
         </div>
