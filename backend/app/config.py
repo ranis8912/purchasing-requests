@@ -51,7 +51,8 @@ class Settings(BaseSettings):
 
     # Upload limits
     max_file_mb: int = 20
-    max_files: int = 5
+    max_agreement_files: int = 3
+    max_supporting_files: int = 10
 
     # Scheduler (UTC hour for nightly jobs)
     scheduler_enabled: bool = True

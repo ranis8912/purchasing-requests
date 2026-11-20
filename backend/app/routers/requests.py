@@ -52,12 +52,10 @@ def _send_email(db: Session, r: PurchaseRequest) -> None:
     db.commit()
 
 
-async def _read_files(files: list[UploadFile]) -> list[tuple[str, bytes]]:
+async def _read_files(files: list[UploadFile], label: str, limit: int) -> list[tuple[str, bytes]]:
     s = get_settings()
-    if not files:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Attach at least one supporting document")
-    if len(files) > s.max_files:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"Attach at most {s.max_files} files")
+    if len(files) > limit:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"{label}: attach at most {limit} files")
     out = []
     for f in files:
         data = await f.read()
@@ -76,7 +74,8 @@ async def _read_files(files: list[UploadFile]) -> list[tuple[str, bytes]]:
 @router.post("", response_model=RequestDetail, status_code=status.HTTP_201_CREATED)
 async def submit_request(
     payload: str = Form(...),
-    files: list[UploadFile] = File(default=[]),
+    agreement_files: list[UploadFile] = File(default=[]),
+    supporting_files: list[UploadFile] = File(default=[]),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -87,13 +86,18 @@ async def submit_request(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, msgs) from exc
     except json.JSONDecodeError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid form data") from exc
-    uploads = await _read_files(files)
+    s = get_settings()
+    agreement = await _read_files(agreement_files, "Fully Executed Agreement", s.max_agreement_files)
+    supporting = await _read_files(supporting_files, "Supporting Documents", s.max_supporting_files)
+    if data.agreement_signed and not agreement:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Attach the fully executed agreement")
+    if not agreement and not supporting:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Attach at least one document")
 
     approver = lookups.find(db, "approvers", data.approver_email)
     if not approver:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Approver is not on the approvers list")
 
-    s = get_settings()
     r = PurchaseRequest(
         **data.model_dump(exclude={"po_recipients"}),
         po_recipients=", ".join(data.po_recipients) or None,
@@ -102,10 +106,11 @@ async def submit_request(
         requester_email=user.email,
         requester_name=user.name,
     )
-    for name, content in uploads:
-        path = f"{r.request_number}/{uuid.uuid4().hex}{storage.extension(name)}"
-        storage.put(s.blob_attachments_container, path, content, storage.content_type(name))
-        r.attachments.append(Attachment(file_name=name, blob_path=path, size_bytes=len(content)))
+    for category, uploads in (("agreement", agreement), ("supporting", supporting)):
+        for name, content in uploads:
+            path = f"{r.request_number}/{uuid.uuid4().hex}{storage.extension(name)}"
+            storage.put(s.blob_attachments_container, path, content, storage.content_type(name))
+            r.attachments.append(Attachment(file_name=name, blob_path=path, size_bytes=len(content), category=category))
     r.history.append(StatusHistory(old_status=None, new_status="Pending Review", changed_by=user.email))
     db.add(r)
     db.commit()

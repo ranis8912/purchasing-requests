@@ -33,7 +33,7 @@ def graph_calls(monkeypatch):
 
 
 def make_request(size: int):
-    att = SimpleNamespace(file_name="sow.pdf", blob_path="x/y.pdf")
+    att = SimpleNamespace(file_name="sow.pdf", blob_path="x/y.pdf", category="agreement")
     return SimpleNamespace(
         request_number="PR-2026-0001", supplier_name="Acme", project_number="012345678", cost_center="0410",
         amount=1000.0, requester_email="a@ges.com", requester_name="A", approver_email="ap@ges.com",

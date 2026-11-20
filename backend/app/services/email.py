@@ -66,7 +66,11 @@ def body_for(r: PurchaseRequest) -> str:
         f'{html.escape(k)}</td><td style="padding:6px 12px;border-bottom:1px solid #e3e7ee">{html.escape(str(v))}</td></tr>'
         for k, v in rows if v not in (None, "")
     )
-    files = "".join(f"<li>{html.escape(a.file_name)}</li>" for a in r.attachments)
+    def file_list(category: str) -> str:
+        items = "".join(f"<li>{html.escape(a.file_name)}</li>" for a in r.attachments if a.category == category)
+        return f"<ul>{items}</ul>" if items else "<p>None</p>"
+    files = (f'<h3 style="margin:18px 0 6px">Fully executed agreement</h3>{file_list("agreement")}'
+             f'<h3 style="margin:18px 0 6px">Supporting documents</h3>{file_list("supporting")}')
     notes = (f'<h3 style="margin:18px 0 6px">Description / notes</h3>'
              f'<div style="white-space:pre-wrap;max-width:760px">{html.escape(r.description)}</div>') if r.description else ""
     test_banner = ('<div style="background:#fff4ce;color:#5c4400;border:1px solid #e0c060;padding:10px 18px;font-weight:600">'
@@ -75,7 +79,7 @@ def body_for(r: PurchaseRequest) -> str:
 {test_banner}<div style="background:#0b2341;color:#fff;padding:14px 18px;font-size:18px;font-weight:600">
 New IT procurement requisition {html.escape(r.request_number)}</div>
 <table style="border-collapse:collapse;width:100%;max-width:760px;margin-top:12px">{trs}</table>
-{notes}<h3 style="margin:18px 0 6px">Attachments</h3><ul>{files}</ul>
+{notes}{files}
 <p><a href="{html.escape(link)}" style="background:#0067b1;color:#fff;padding:8px 16px;text-decoration:none;border-radius:4px">
 Open request in the Purchasing Request portal</a></p>
 <p style="color:#6b7686;font-size:12px">Reply to this email to reach the requester directly.</p></div>"""

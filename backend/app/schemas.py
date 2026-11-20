@@ -64,6 +64,7 @@ class AttachmentOut(BaseModel):
     id: int
     file_name: str
     size_bytes: int
+    category: str
     uploaded_at: datetime
 
 

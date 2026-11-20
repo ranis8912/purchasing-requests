@@ -40,7 +40,7 @@ export type RequestDetail = RequestSummary & {
   email_sent_at: string | null;
   admin_notes: string | null;
   updated_at: string;
-  attachments: { id: number; file_name: string; size_bytes: number; uploaded_at: string }[];
+  attachments: { id: number; file_name: string; size_bytes: number; category: "agreement" | "supporting"; uploaded_at: string }[];
   history: { old_status: string | null; new_status: string; changed_by: string; changed_at: string; note: string | null }[];
 };
 
@@ -84,10 +84,11 @@ export const getMe = () => api<Me>("/api/me");
 export const getLookups = () => api<Lookups>("/api/lookups");
 export const listRequests = (scope: "mine" | "all") => api<RequestSummary[]>(`/api/requests?scope=${scope}`);
 export const getRequest = (n: string) => api<RequestDetail>(`/api/requests/${encodeURIComponent(n)}`);
-export const submitRequest = (payload: object, files: File[]) => {
+export const submitRequest = (payload: object, agreement: File[], supporting: File[]) => {
   const fd = new FormData();
   fd.append("payload", JSON.stringify(payload));
-  files.forEach((f) => fd.append("files", f));
+  agreement.forEach((f) => fd.append("agreement_files", f));
+  supporting.forEach((f) => fd.append("supporting_files", f));
   return api<RequestDetail>("/api/requests", { method: "POST", body: fd });
 };
 export const updateStatus = (n: string, status: string, note: string) =>

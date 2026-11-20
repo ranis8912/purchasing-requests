@@ -76,6 +76,7 @@ class Attachment(Base):
     file_name: Mapped[str] = mapped_column(String(255))
     blob_path: Mapped[str] = mapped_column(String(400))
     size_bytes: Mapped[int] = mapped_column(Integer)
+    category: Mapped[str] = mapped_column(String(20), default="supporting")  # agreement | supporting
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     request: Mapped[PurchaseRequest] = relationship(back_populates="attachments")

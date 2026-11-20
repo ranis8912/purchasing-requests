@@ -10,7 +10,8 @@ import { fileSize, money } from "../format";
 import Combobox from "../components/Combobox";
 import { EmailBadge, ErrorBox, PageLoader, Spinner, useMe, useToast } from "../components/ui";
 
-const MAX_FILES = 5;
+const MAX_AGREEMENT_FILES = 3;
+const MAX_SUPPORTING_FILES = 10;
 const MAX_MB = 20;
 const EXTENSIONS = [".pdf", ".doc", ".docx", ".xls", ".xlsx"];
 const yesNo = z.boolean({ error: "Choose Yes or No" });
@@ -98,6 +99,62 @@ function YesNo({ control, name, label }: { control: Control<FormValues>; name: P
   );
 }
 
+/** One upload area (drag and drop or click). Checks type, size, duplicates and the per-section limit. */
+function FileDrop({ id, label, required, hint, max, files, onChange, error }: {
+  id: string; label: string; required: boolean; hint: string; max: number; files: File[]; onChange: (f: File[]) => void; error?: string;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  const [drag, setDrag] = useState(false);
+  const [problem, setProblem] = useState("");
+
+  function add(list: FileList | null) {
+    if (!list) return;
+    setProblem("");
+    const next = [...files];
+    for (const f of Array.from(list)) {
+      if (!EXTENSIONS.some((x) => f.name.toLowerCase().endsWith(x))) { setProblem(`"${f.name}" isn't a PDF, Word or Excel file.`); continue; }
+      if (f.size > MAX_MB * 1024 * 1024) { setProblem(`"${f.name}" is over ${MAX_MB} MB.`); continue; }
+      if (next.some((x) => x.name === f.name && x.size === f.size)) continue;
+      if (next.length >= max) { setProblem(`You can attach up to ${max} files here.`); break; }
+      next.push(f);
+    }
+    onChange(next);
+  }
+  const shown = problem || error;
+
+  return (
+    <div className={`field span-2 ${shown ? "invalid" : ""}`}>
+      <span className="label" id={`${id}-label`}>{label}{required && <span className="req" aria-hidden>*</span>}</span>
+      <div
+        className={`drop ${drag ? "drag" : ""}`} role="button" tabIndex={0} aria-labelledby={`${id}-label`}
+        onClick={() => input.current?.click()}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.current?.click(); } }}
+        onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
+        onDrop={(e) => { e.preventDefault(); setDrag(false); add(e.dataTransfer.files); }}
+      >
+        <div className="drop__icon"><FileUp size={22} aria-hidden /></div>
+        <div><strong>Click to choose files</strong> or drag them here</div>
+        <div className="small muted">{hint} · PDF, Word or Excel (incl. .doc/.xls) · up to {max} files, {MAX_MB} MB each</div>
+        <input ref={input} type="file" accept={EXTENSIONS.join(",")} multiple hidden
+          onChange={(e) => { add(e.target.files); e.target.value = ""; }} />
+      </div>
+      {shown && <span className="field-error" role="alert">{shown}</span>}
+      {files.length > 0 && (
+        <ul className="files">
+          {files.map((f) => (
+            <li key={f.name + f.size} className="file">
+              <FileText size={20} className="file__icon" aria-hidden />
+              <span className="file__name">{f.name}</span><span className="file__size">{fileSize(f.size)}</span>
+              <button type="button" className="btn btn-ghost btn-sm" aria-label={`Remove ${f.name}`}
+                onClick={() => onChange(files.filter((x) => x !== f))}><X size={15} /></button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function Success({ r, onAnother }: { r: RequestDetail; onAnother: () => void }) {
   return (
     <div className="page">
@@ -128,13 +185,11 @@ export default function NewRequest() {
   const toast = useToast();
   const qc = useQueryClient();
   const { data: lists, isLoading, error } = useQuery({ queryKey: ["lookups"], queryFn: getLookups, staleTime: 5 * 60_000 });
-  const [files, setFiles] = useState<File[]>([]);
-  const [fileError, setFileError] = useState("");
-  const [drag, setDrag] = useState(false);
+  const [agreementFiles, setAgreementFiles] = useState<File[]>([]);
+  const [supportingFiles, setSupportingFiles] = useState<File[]>([]);
   const [done, setDone] = useState<RequestDetail | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
 
-  const { register, control, handleSubmit, watch, reset, formState: { errors, isValid } } = useForm<FormValues>({
+  const { register, control, handleSubmit, watch, reset, formState: { errors, isValid, isDirty } } = useForm<FormValues>({
     resolver: zodResolver(schema), defaultValues: DEFAULTS, mode: "onChange",
   });
   const [isExtension, isCapital, signed, urgent, amount] =
@@ -149,7 +204,7 @@ export default function NewRequest() {
         previous_po: blankToNull(v.previous_po), capital_project_number: blankToNull(v.capital_project_number),
         signature_date: blankToNull(v.signature_date), urgent_reason: blankToNull(v.urgent_reason),
         description: blankToNull(v.description),
-      }, files);
+      }, agreementFiles, supportingFiles);
     },
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ["requests"] });
@@ -159,25 +214,15 @@ export default function NewRequest() {
     onError: (e) => toast(e instanceof Error ? e.message : "Submit failed", true),
   });
   // Submit unlocks only once everything required passes validation.
-  const canSubmit = isValid && files.length > 0 && !mutation.isPending;
-
-  function addFiles(list: FileList | null) {
-    if (!list) return;
-    setFileError("");
-    const next = [...files];
-    for (const f of Array.from(list)) {
-      if (!EXTENSIONS.some((x) => f.name.toLowerCase().endsWith(x))) { setFileError(`"${f.name}" isn't a PDF, Word or Excel file.`); continue; }
-      if (f.size > MAX_MB * 1024 * 1024) { setFileError(`"${f.name}" is over ${MAX_MB} MB.`); continue; }
-      if (next.some((x) => x.name === f.name && x.size === f.size)) continue;
-      if (next.length >= MAX_FILES) { setFileError(`You can attach up to ${MAX_FILES} files.`); break; }
-      next.push(f);
-    }
-    setFiles(next);
-  }
+  // The agreement is required once it's signed; otherwise at least one document in either section.
+  const docsMissing = signed ? agreementFiles.length === 0 : agreementFiles.length + supportingFiles.length === 0;
+  const docsError = signed ? "Attach the fully executed agreement." : "Attach at least one document (agreement or supporting).";
+  const canSubmit = isValid && !docsMissing && !mutation.isPending;
+  const touchedDocs = isDirty;
 
   const onSubmit = handleSubmit((v) => mutation.mutate(v));
 
-  if (done) return <Success r={done} onAnother={() => { setDone(null); reset(DEFAULTS); setFiles([]); }} />;
+  if (done) return <Success r={done} onAnother={() => { setDone(null); reset(DEFAULTS); setAgreementFiles([]); setSupportingFiles([]); }} />;
   if (isLoading) return <PageLoader />;
   if (error || !lists) return <div className="page"><ErrorBox error={error} /></div>;
 
@@ -232,7 +277,7 @@ export default function NewRequest() {
           </Field>
         </Section>
 
-        <Section step={3} title="SOW / quote / order form" intro={`The agreement details and the documents. PDF, Word or Excel, up to ${MAX_FILES} files, ${MAX_MB} MB each.`}>
+        <Section step={3} title="SOW / quote / order form" intro="The agreement details and the documents.">
           <Field label="Supplier name" required span error={errors.supplier_name} htmlFor="supplier_name">
             <input id="supplier_name" className="input" maxLength={200} {...register("supplier_name")} />
           </Field>
@@ -258,35 +303,14 @@ export default function NewRequest() {
             <input id="amount" type="number" min="0" step="0.01" inputMode="decimal" className="input" {...register("amount", { valueAsNumber: true })} />
           </Field>
           <div className="field" />
-          <div className={`field span-2 ${fileError ? "invalid" : ""}`}>
-            <span className="label">Supporting documents<span className="req" aria-hidden>*</span></span>
-            <div
-              className={`drop ${drag ? "drag" : ""}`} role="button" tabIndex={0}
-              onClick={() => fileInput.current?.click()}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.current?.click(); } }}
-              onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
-              onDrop={(e) => { e.preventDefault(); setDrag(false); addFiles(e.dataTransfer.files); }}
-            >
-              <div className="drop__icon"><FileUp size={22} aria-hidden /></div>
-              <div><strong>Click to choose files</strong> or drag them here</div>
-              <div className="small muted">SOW, quote or order form (PDF, Word or Excel, including .doc and .xls)</div>
-              <input ref={fileInput} type="file" accept={EXTENSIONS.join(",")} multiple hidden
-                onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
-            </div>
-            {fileError && <span className="field-error" role="alert">{fileError}</span>}
-            {files.length > 0 && (
-              <ul className="files">
-                {files.map((f) => (
-                  <li key={f.name + f.size} className="file">
-                    <FileText size={20} className="file__icon" aria-hidden />
-                    <span className="file__name">{f.name}</span><span className="file__size">{fileSize(f.size)}</span>
-                    <button type="button" className="btn btn-ghost btn-sm" aria-label={`Remove ${f.name}`}
-                      onClick={() => setFiles(files.filter((x) => x !== f))}><X size={15} /></button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+          <FileDrop id="agreement" label="Fully Executed Agreement" required={!!signed} max={MAX_AGREEMENT_FILES}
+            hint={signed ? "The signed SOW, quote or order form" : "Required once the agreement is signed"}
+            files={agreementFiles} onChange={setAgreementFiles}
+            error={signed && docsMissing && touchedDocs ? docsError : undefined} />
+          <FileDrop id="supporting" label="Supporting Documents" required={false} max={MAX_SUPPORTING_FILES}
+            hint="Optional: quotes, unsigned drafts, backup"
+            files={supportingFiles} onChange={setSupportingFiles}
+            error={!signed && docsMissing && touchedDocs ? docsError : undefined} />
         </Section>
 
         <Section step={4} title="Urgency & notes" intro="Mark the request urgent only when there's a real deadline or risk.">
@@ -308,11 +332,11 @@ export default function NewRequest() {
             <Mail size={16} aria-hidden />
             {canSubmit || mutation.isPending
               ? "Procurement is notified and you're copied. Replies come to you."
-              : "Complete every required field and attach the documents to submit."}
+              : docsMissing && isValid ? docsError : "Complete every required field and attach the documents to submit."}
           </span>
           <div style={{ display: "flex", gap: 10 }}>
             <button type="button" className="btn btn-secondary" disabled={mutation.isPending}
-              onClick={() => { reset(DEFAULTS); setFiles([]); setFileError(""); }}>Clear</button>
+              onClick={() => { reset(DEFAULTS); setAgreementFiles([]); setSupportingFiles([]); }}>Clear</button>
             <button type="submit" className="btn btn-primary btn-lg" disabled={!canSubmit}>
               {mutation.isPending ? <><Spinner /> Submitting…</> : <><Send size={17} aria-hidden /> Submit requisition</>}
             </button>

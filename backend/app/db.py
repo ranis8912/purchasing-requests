@@ -50,3 +50,14 @@ def init_db() -> None:
     from . import models  # noqa: F401  (register tables)
 
     Base.metadata.create_all(engine)
+    _add_missing_columns()
+
+
+def _add_missing_columns() -> None:
+    """create_all only creates missing tables. Add columns introduced after a table was created."""
+    added = {("attachments", "category"): "VARCHAR(20) NOT NULL DEFAULT 'supporting'"}
+    with engine.begin() as conn:
+        for (table, column), ddl in added.items():
+            cols = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
+            if column not in cols:
+                conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")

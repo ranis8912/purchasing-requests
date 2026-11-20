@@ -158,18 +158,25 @@ export default function RequestDetail() {
         </div>
 
         <div className="grid" style={{ alignContent: "start" }}>
-          <Card title="Documents" subtitle={`${r.attachments.length} file${r.attachments.length === 1 ? "" : "s"}`}>
-            <ul className="files" style={{ marginTop: 0 }}>
-              {r.attachments.map((a) => (
-                <li key={a.id} className="file">
-                  <FileText size={20} className="file__icon" aria-hidden />
-                  <a className="file__name" href={attachmentUrl(r.request_number, a.id)} target="_blank" rel="noreferrer">{a.file_name}</a>
-                  <span className="file__size">{fileSize(a.size_bytes)}</span>
-                  <ExternalLink size={14} className="muted" aria-hidden />
-                </li>
-              ))}
-            </ul>
-          </Card>
+          {([["agreement", "Fully executed agreement"], ["supporting", "Supporting documents"]] as const).map(([cat, title]) => {
+            const docs = r.attachments.filter((a) => a.category === cat);
+            return (
+              <Card key={cat} title={title} subtitle={`${docs.length} file${docs.length === 1 ? "" : "s"}`}>
+                {docs.length === 0 ? <p className="muted small" style={{ margin: 0 }}>None attached</p> : (
+                  <ul className="files" style={{ marginTop: 0 }}>
+                    {docs.map((a) => (
+                      <li key={a.id} className="file">
+                        <FileText size={20} className="file__icon" aria-hidden />
+                        <a className="file__name" href={attachmentUrl(r.request_number, a.id)} target="_blank" rel="noreferrer">{a.file_name}</a>
+                        <span className="file__size">{fileSize(a.size_bytes)}</span>
+                        <ExternalLink size={14} className="muted" aria-hidden />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+            );
+          })}
 
           {me?.is_admin && <AdminPanel r={r} />}
 

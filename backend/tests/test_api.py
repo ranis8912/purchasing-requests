@@ -1,4 +1,4 @@
-from conftest import ADMIN, ALICE, BOB, submit
+from conftest import ADMIN, ALICE, BOB, PDF, submit
 
 
 def test_health_and_auth(client):
@@ -36,9 +36,9 @@ def test_validation(client):
     from datetime import date, timedelta
     ok = lambda **kw: submit(client, ALICE, **kw).status_code  # noqa: E731
     assert submit(client, ALICE, files=[]).status_code == 422
-    assert submit(client, ALICE, files=[("files", ("x.pdf", b"MZ not a pdf", "application/pdf"))]).status_code == 422
-    assert submit(client, ALICE, files=[("files", ("x.exe", b"MZ", "application/octet-stream"))]).status_code == 422
-    assert submit(client, ALICE, files=[("files", ("x.doc", b"%PDF-1.4", "application/msword"))]).status_code == 422
+    assert submit(client, ALICE, files=[("supporting_files", ("x.pdf", b"MZ not a pdf", "application/pdf"))]).status_code == 422
+    assert submit(client, ALICE, files=[("supporting_files", ("x.exe", b"MZ", "application/octet-stream"))]).status_code == 422
+    assert submit(client, ALICE, files=[("supporting_files", ("x.doc", b"%PDF-1.4", "application/msword"))]).status_code == 422
     # Project number: exactly 9 digits; cost center: exactly 4 digits
     for bad in ["12345678", "1234567890", "12345678a", ""]:
         assert ok(project_number=bad) == 422, bad
@@ -49,9 +49,11 @@ def test_validation(client):
     assert ok(is_po_extension=True, previous_po="PO12345") == 201
     assert ok(is_capital_project=True) == 422
     assert ok(is_capital_project=True, capital_project_number="CP-1") == 201
-    assert ok(agreement_signed=True) == 422
-    assert ok(agreement_signed=True, signature_date=str(date.today() + timedelta(days=1))) == 422
-    assert ok(agreement_signed=True, signature_date=str(date.today())) == 201
+    signed = [("agreement_files", ("signed.pdf", PDF, "application/pdf"))]
+    assert ok(agreement_signed=True, files=signed) == 422  # needs signature date
+    assert ok(agreement_signed=True, signature_date=str(date.today() + timedelta(days=1)), files=signed) == 422
+    assert ok(agreement_signed=True, signature_date=str(date.today())) == 422  # signed but no agreement file
+    assert ok(agreement_signed=True, signature_date=str(date.today()), files=signed) == 201
     assert ok(is_urgent=True) == 422
     assert ok(is_urgent=True, urgent_reason="Not a reason") == 422
     assert ok(is_urgent=True, urgent_reason="Commercial Deadline") == 201
@@ -116,8 +118,8 @@ def test_admin_by_group_claim(client, monkeypatch):
 
 def test_word_and_excel_attachments(client):
     ole, zipped = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1rest", b"PK\x03\x04rest"
-    files = [("files", ("quote.xls", ole, "application/vnd.ms-excel")), ("files", ("sow.doc", ole, "application/msword")),
-             ("files", ("order.xlsx", zipped, "application/octet-stream")), ("files", ("sow.docx", zipped, "application/octet-stream"))]
+    files = [("supporting_files", ("quote.xls", ole, "application/vnd.ms-excel")), ("supporting_files", ("sow.doc", ole, "application/msword")),
+             ("supporting_files", ("order.xlsx", zipped, "application/octet-stream")), ("supporting_files", ("sow.docx", zipped, "application/octet-stream"))]
     body = submit(client, ALICE, files=files).json()
     assert [a["file_name"] for a in body["attachments"]] == ["quote.xls", "sow.doc", "order.xlsx", "sow.docx"]
     dl = client.get(f"/api/requests/{body['request_number']}/attachments/{body['attachments'][0]['id']}", headers=ALICE)
@@ -139,3 +141,14 @@ def test_admin_manages_email_recipients(client, monkeypatch):
     assert saved["updated_by"] == "po.admin@ges.com"
     submit(client, ALICE)
     assert sent == {"to": ["po@ges.com", "mary@ges.com", "heather@ges.com"], "cc": ["boss@ges.com"]}
+
+
+def test_agreement_and_supporting_sections(client):
+    f = lambda field, name: (field, (name, PDF, "application/pdf"))  # noqa: E731
+    body = submit(client, ALICE, files=[f("agreement_files", "signed.pdf"), f("supporting_files", "quote.pdf")],
+                  agreement_signed=True, signature_date="2026-01-15").json()
+    assert [(a["file_name"], a["category"]) for a in body["attachments"]] == [("signed.pdf", "agreement"), ("quote.pdf", "supporting")]
+    # Not signed: the agreement section is optional, but at least one document is still required
+    assert submit(client, ALICE, files=[f("agreement_files", "draft.pdf")]).status_code == 201
+    too_many = [f("agreement_files", f"a{i}.pdf") for i in range(4)]
+    assert submit(client, ALICE, files=too_many).status_code == 422

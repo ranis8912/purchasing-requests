@@ -53,5 +53,5 @@ def form(**overrides) -> dict:
 
 
 def submit(client, headers, files=None, **overrides):
-    files = files if files is not None else [("files", ("sow.pdf", PDF, "application/pdf"))]
+    files = files if files is not None else [("supporting_files", ("sow.pdf", PDF, "application/pdf"))]
     return client.post("/api/requests", headers=headers, data={"payload": json.dumps(form(**overrides))}, files=files)
