@@ -168,7 +168,7 @@ button.kpi:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
   border: 0; background: transparent; padding: 6px 16px; border-radius: 7px; font: inherit; font-weight: 600;
   color: var(--text-2); cursor: pointer;
 }
-.segmented button[aria-pressed="true"] { background: var(--surface); color: var(--ges-navy-900); box-shadow: var(--shadow-sm); }
+.segmented button[aria-pressed="true"] { background: var(--primary); color: #fff; box-shadow: var(--shadow-sm); }
 
 .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
 .toggle-row span { font-weight: 500; }
