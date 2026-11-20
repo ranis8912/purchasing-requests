@@ -11,6 +11,7 @@ endings on startup.sh (CRLF gives "startup.sh: not found", exit 127, site return
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -39,6 +40,9 @@ def main(out: Path) -> None:
     print("Installing Linux Python packages...")
     install_linux_packages(pkgs)
     sources = [(BACKEND / item, BACKEND) for item in INCLUDE] + [(pkgs, Path(tmp.name))]
+    # Stamp every file with the build time. Kudu skips files whose size and timestamp look unchanged,
+    # so a fixed timestamp silently dropped edited files of the same size (e.g. index.html).
+    stamp = time.localtime()[:6]
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         for src, base in sources:
             files = [src] if src.is_file() else sorted(p for p in src.rglob("*") if p.is_file())
@@ -49,7 +53,7 @@ def main(out: Path) -> None:
                 data = f.read_bytes()
                 if f.suffix == ".sh":
                     data = data.replace(b"\r\n", b"\n")
-                info = zipfile.ZipInfo(arc, date_time=(2026, 1, 1, 0, 0, 0))
+                info = zipfile.ZipInfo(arc, date_time=stamp)
                 info.external_attr = (0o755 if f.suffix == ".sh" else 0o644) << 16
                 info.compress_type = zipfile.ZIP_DEFLATED
                 z.writestr(info, data)

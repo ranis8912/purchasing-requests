@@ -11,6 +11,7 @@ import Requests from "./pages/Requests";
 import RequestDetail from "./pages/RequestDetail";
 import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
+import RouteError from "./pages/RouteError";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 30_000 } },
@@ -19,13 +20,20 @@ const queryClient = new QueryClient({
 const router = createBrowserRouter([
   {
     element: <Layout />,
+    errorElement: <RouteError />,
     children: [
-      { path: "/", element: <Dashboard /> },
-      { path: "/new", element: <NewRequest /> },
-      { path: "/requests", element: <Requests /> },
-      { path: "/requests/:number", element: <RequestDetail /> },
-      { path: "/admin", element: <Admin /> },
-      { path: "*", element: <NotFound /> },
+      {
+        // Page errors render inside the layout, so the header and navigation stay usable.
+        errorElement: <RouteError />,
+        children: [
+          { path: "/", element: <Dashboard /> },
+          { path: "/new", element: <NewRequest /> },
+          { path: "/requests", element: <Requests /> },
+          { path: "/requests/:number", element: <RequestDetail /> },
+          { path: "/admin", element: <Admin /> },
+          { path: "*", element: <NotFound /> },
+        ],
+      },
     ],
   },
 ]);
