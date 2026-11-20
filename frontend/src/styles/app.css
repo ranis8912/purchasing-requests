@@ -328,3 +328,15 @@ table.table { width: 100%; border-collapse: collapse; }
 .combo-list li.active { background: var(--primary-soft); }
 .combo-list li.selected .mono { color: var(--primary); }
 .combo-list .combo-empty { color: var(--text-3); cursor: default; }
+
+/* Info popover ("i" button with hover preview / click to pin) */
+.info-pop { position: relative; display: inline-flex; flex-shrink: 0; }
+.info-pop__btn { display: inline-flex; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; border-radius: 50%; }
+.info-pop__btn:hover { opacity: 0.75; }
+.info-pop__panel {
+  position: absolute; top: calc(100% + 8px); left: -8px; z-index: 30; width: 320px; max-width: 80vw;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: var(--shadow); padding: 14px 16px; font-size: 13px; line-height: 1.5;
+}
+.info-pop__panel h4 { margin: 0 0 6px; font-size: 13px; }
+.info-pop__panel ul { margin: 6px 0 0; padding-left: 18px; }

@@ -4,10 +4,11 @@ import { Controller, useForm, type Control, type FieldError, type Path } from "r
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, FileText, FileUp, Info, Mail, Send, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileText, FileUp, Mail, Send, X } from "lucide-react";
 import { getLookups, submitRequest, type RequestDetail } from "../api";
 import { fileSize, money } from "../format";
 import Combobox from "../components/Combobox";
+import InfoPopover from "../components/InfoPopover";
 import { EmailBadge, ErrorBox, PageLoader, Spinner, useMe, useToast } from "../components/ui";
 
 const MAX_AGREEMENT_FILES = 3;
@@ -282,7 +283,18 @@ export default function NewRequest() {
             <input id="supplier_name" className="input" maxLength={200} {...register("supplier_name")} />
           </Field>
           <div className="alert alert-info" style={{ gridColumn: "1 / -1" }}>
-            <Info size={18} aria-hidden /><div>The supplier must be set up in Oracle before a PO can be raised.</div>
+            <InfoPopover label="How to get a new supplier set up">
+              <h4>New supplier? Get it set up first</h4>
+              Email <a href="mailto:NAPurchasing@ges.com?subject=New%20supplier%20setup%20request">NAPurchasing@ges.com</a> with:
+              <ul>
+                <li>Company</li>
+                <li>Contact name</li>
+                <li>Contact email address</li>
+                <li>Phone #</li>
+                <li>Business need</li>
+              </ul>
+            </InfoPopover>
+            <div>The supplier must be set up in Oracle before a PO can be raised. Select the <strong>i</strong> for how to request a new supplier.</div>
           </div>
           <Field label="Service start date" required error={errors.start_date} htmlFor="start_date">
             <input id="start_date" type="date" className="input" {...register("start_date", { deps: ["end_date"] })} />
