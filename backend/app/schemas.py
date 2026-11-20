@@ -118,5 +118,19 @@ class StatusUpdate(BaseModel):
     note: str | None = Field(default=None, max_length=2000)
 
 
+class RecipientsUpdate(BaseModel):
+    """Comma-separated email lists for the submission email."""
+    to: list[EmailStr] = Field(min_length=1, max_length=20)
+    cc: list[EmailStr] = Field(default=[], max_length=20)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _split(cls, data):
+        from .services.recipients import split
+        if isinstance(data, dict):
+            data = {k: split(v) if isinstance(v, str) else v for k, v in data.items()}
+        return data
+
+
 class NotesUpdate(BaseModel):
     admin_notes: str = Field(max_length=5000)

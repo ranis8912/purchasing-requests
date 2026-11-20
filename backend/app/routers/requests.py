@@ -17,7 +17,7 @@ from ..config import get_settings
 from ..db import get_db
 from ..models import STATUSES, Attachment, PurchaseRequest, StatusHistory, utcnow
 from ..schemas import NotesUpdate, RequestDetail, RequestIn, RequestSummary, StatusUpdate
-from ..services import email, lookups, storage
+from ..services import email, lookups, recipients, storage
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/requests", tags=["requests"])
@@ -44,7 +44,7 @@ def _get_visible(db: Session, number: str, user: User) -> PurchaseRequest:
 
 def _send_email(db: Session, r: PurchaseRequest) -> None:
     try:
-        email.send_submission_email(r)
+        email.send_submission_email(r, *recipients.resolve(db))
         r.email_status, r.email_error, r.email_sent_at = "Sent", None, utcnow()
     except Exception as exc:
         log.exception("Email failed for %s", r.request_number)

@@ -7,7 +7,8 @@ from ..auth import User, get_current_user, require_admin
 from ..config import Settings, get_settings
 from ..db import get_db
 from ..models import STATUSES, URGENT_REASONS, LookupRefresh, LookupValue
-from ..services import lookups
+from ..schemas import RecipientsUpdate
+from ..services import lookups, recipients
 
 router = APIRouter(prefix="/api")
 
@@ -51,3 +52,13 @@ def lookup_status(_: User = Depends(require_admin), db: Session = Depends(get_db
 def refresh_lookups(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
     lookups.refresh(db, admin.email)
     return _refresh_status(db)
+
+
+@router.get("/admin/recipients", tags=["admin"])
+def get_recipients(_: User = Depends(require_admin), db: Session = Depends(get_db)):
+    return recipients.get(db)
+
+
+@router.put("/admin/recipients", tags=["admin"])
+def set_recipients(body: RecipientsUpdate, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+    return recipients.save(db, [str(a) for a in body.to], [str(a) for a in body.cc], admin.email)

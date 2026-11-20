@@ -103,8 +103,9 @@ def _attach(mailbox: str, message_id: str, name: str, data: bytes) -> None:
             raise graph.GraphError(f"Attachment upload failed for {name}: {resp.status_code} {resp.text[:300]}")
 
 
-def send_submission_email(r: PurchaseRequest) -> None:
-    """Send the email or raise. The caller records Sent/Failed on the request."""
+def send_submission_email(r: PurchaseRequest, to: list[str] | None = None, cc: list[str] | None = None) -> None:
+    """Send the email or raise. The caller records Sent/Failed on the request.
+    to/cc come from the Admin page; without them, To falls back to EMAIL_TO (then the sender mailbox)."""
     s = get_settings()
     subject, body = subject_for(r), body_for(r)
 
@@ -118,13 +119,16 @@ def send_submission_email(r: PurchaseRequest) -> None:
         return
 
     mb = s.graph_shared_mailbox
-    to = [a.strip() for a in (s.email_to or mb).split(",") if a.strip()]
+    to = to or [a.strip() for a in (s.email_to or mb).split(",") if a.strip()]
+    # Requester first; skip duplicates so nobody gets the email twice.
+    cc_all = [{"emailAddress": {"address": r.requester_email, "name": r.requester_name}}] + [
+        {"emailAddress": {"address": a}} for a in (cc or []) if a.lower() != r.requester_email.lower()]
     message = {
         "subject": subject,
         "importance": "high" if r.is_urgent else "normal",
         "body": {"contentType": "HTML", "content": body},
         "toRecipients": [{"emailAddress": {"address": a}} for a in to],
-        "ccRecipients": [{"emailAddress": {"address": r.requester_email, "name": r.requester_name}}],
+        "ccRecipients": cc_all,
         "replyTo": [{"emailAddress": {"address": r.requester_email, "name": r.requester_name}}],
     }
     files = [(a.file_name, storage.get(s.blob_attachments_container, a.blob_path)) for a in r.attachments]

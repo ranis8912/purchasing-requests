@@ -119,3 +119,14 @@ class LookupRefresh(Base):
     ok: Mapped[bool] = mapped_column(Boolean)
     message: Mapped[str] = mapped_column(Text)
     triggered_by: Mapped[str] = mapped_column(String(320))
+
+
+class AppSetting(Base):
+    """Settings Purchasing admins change in the portal (e.g. email recipients), so no redeploy is needed."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(50), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")
+    updated_by: Mapped[str] = mapped_column(String(320))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

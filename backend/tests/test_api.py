@@ -123,3 +123,19 @@ def test_word_and_excel_attachments(client):
     dl = client.get(f"/api/requests/{body['request_number']}/attachments/{body['attachments'][0]['id']}", headers=ALICE)
     assert dl.content == ole and dl.headers["content-type"] == "application/vnd.ms-excel"
     assert dl.headers["content-disposition"].startswith("attachment;")
+
+
+def test_admin_manages_email_recipients(client, monkeypatch):
+    from app.services import email
+    sent = {}
+    monkeypatch.setattr(email, "send_submission_email", lambda r, to=None, cc=None: sent.update(to=to, cc=cc))
+    assert client.get("/api/admin/recipients", headers=ALICE).status_code == 403
+    assert client.get("/api/admin/recipients", headers=ADMIN).json()["source"] == "app setting"
+    url = "/api/admin/recipients"
+    assert client.put(url, headers=ADMIN, json={"to": "", "cc": ""}).status_code == 422  # To is required
+    assert client.put(url, headers=ADMIN, json={"to": "a@ges.com, not-an-email", "cc": ""}).status_code == 422
+    saved = client.put(url, headers=ADMIN, json={"to": "po@ges.com, mary@ges.com; heather@ges.com", "cc": "boss@ges.com"}).json()
+    assert saved["to"] == "po@ges.com, mary@ges.com, heather@ges.com" and saved["source"] == "admin"
+    assert saved["updated_by"] == "po.admin@ges.com"
+    submit(client, ALICE)
+    assert sent == {"to": ["po@ges.com", "mary@ges.com", "heather@ges.com"], "cc": ["boss@ges.com"]}

@@ -83,7 +83,7 @@ After deploying, open https://dv-gespurchasingrequests.ges.com in an InPrivate w
 | `GRAPH_APP_ID`, `GRAPH_TENANT_ID` | Graph app registration (separate from the Easy Auth one) |
 | `GRAPH_CLIENT_SECRET` | Key Vault reference |
 | `GRAPH_SHARED_MAILBOX` | **Sender**: a real user or shared mailbox the Graph app may send as (not a distribution group, which Graph rejects with `ErrorInvalidUser`) |
-| `EMAIL_TO` | Recipient(s), comma-separated; can be a distribution group. Defaults to the sender. |
+| `EMAIL_TO` | Default recipient(s), comma-separated; used only until a Purchasing admin saves recipients on the Admin page. |
 | `SP_SITE_URL` | e.g. `https://<tenant>.sharepoint.com/sites/<Purchasing site>` |
 | `SP_LISTS_PATH` | Path in the site's Documents library, e.g. `PO Intake/PO Intake Lists.xlsx` |
 | `BLOB_ACCOUNT_URL` | `https://<storage account>.blob.core.windows.net` |

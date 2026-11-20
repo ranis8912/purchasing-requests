@@ -50,6 +50,8 @@ export type LookupStatus = {
   refreshes: { started_at: string; ok: boolean; source: string; message: string; triggered_by: string }[];
 };
 
+export type Recipients = { to: string; cc: string; source: "admin" | "app setting"; updated_by: string | null; updated_at: string | null };
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -93,6 +95,9 @@ export const updateStatus = (n: string, status: string, note: string) =>
 export const updateNotes = (n: string, admin_notes: string) =>
   api<RequestDetail>(`/api/requests/${encodeURIComponent(n)}/notes`, { method: "PUT", body: JSON.stringify({ admin_notes }) });
 export const resendEmail = (n: string) => api<RequestDetail>(`/api/requests/${encodeURIComponent(n)}/resend-email`, { method: "POST" });
+export const getRecipients = () => api<Recipients>("/api/admin/recipients");
+export const saveRecipients = (to: string, cc: string) =>
+  api<Recipients>("/api/admin/recipients", { method: "PUT", body: JSON.stringify({ to, cc }) });
 export const getLookupStatus = () => api<LookupStatus>("/api/admin/lookups");
 export const refreshLookups = () => api<LookupStatus>("/api/admin/lookups/refresh", { method: "POST" });
 export const attachmentUrl = (n: string, id: number) => `/api/requests/${encodeURIComponent(n)}/attachments/${id}`;

@@ -99,3 +99,12 @@ def test_blank_or_prod_env_still_sends_without_test_label(graph_calls, monkeypat
     msg = graph_calls[0][2]["json"]["message"]
     assert graph_calls[0][1] == "/users/po@ges.com/sendMail"
     assert msg["subject"].startswith("[PR-2026-0001]") and "TEST ENVIRONMENT" not in msg["body"]["content"]
+
+
+def test_admin_cc_added_after_requester_without_duplicates(graph_calls, monkeypatch):
+    r, data = make_request(10)
+    monkeypatch.setattr(email.storage, "get", lambda c, p: data)
+    email.send_submission_email(r, to=["po@ges.com"], cc=["boss@ges.com", "A@ges.com"])
+    msg = graph_calls[0][2]["json"]["message"]
+    assert [t["emailAddress"]["address"] for t in msg["toRecipients"]] == ["po@ges.com"]
+    assert [c["emailAddress"]["address"] for c in msg["ccRecipients"]] == ["a@ges.com", "boss@ges.com"]
