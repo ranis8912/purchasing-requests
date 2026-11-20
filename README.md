@@ -74,7 +74,7 @@ After deploying, open https://dv-gespurchasingrequests.ges.com in an InPrivate w
 ### App settings
 | Name | Value |
 |---|---|
-| `APP_ENV` | `dev` |
+| `APP_ENV` | `dev`, or `prod` in production. Anything other than `prod` marks emails `[TEST – …]` with a test banner. |
 | `AUTH_MODE` | `easyauth` |
 | `AZURE_AD_ADMIN_GROUP_ID` | Object ID of the Purchasing admins group |
 | `DEMO_MODE` | `true` only for a demo: sample lists instead of SharePoint. Emails are sent if `GRAPH_*` is set, otherwise written to `/home/data/outbox`. Remove for real use. |

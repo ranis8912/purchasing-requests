@@ -53,7 +53,8 @@ def test_small_attachments_use_sendmail(graph_calls, monkeypatch):
     assert msg["ccRecipients"][0]["emailAddress"]["address"] == "a@ges.com"
     assert msg["replyTo"][0]["emailAddress"]["address"] == "a@ges.com"
     assert "&lt;b&gt;x&lt;/b&gt;" in msg["body"]["content"]  # user text is escaped
-    assert msg["subject"] == "[PR-2026-0001] – Acme – Project 012345678 – CC 0410 – $1,000.00"
+    assert msg["subject"] == "[TEST – LOCAL] [PR-2026-0001] – Acme – Project 012345678 – CC 0410 – $1,000.00"
+    assert msg["importance"] == "normal" and "TEST ENVIRONMENT" in msg["body"]["content"]
 
 
 def test_separate_recipient_group(graph_calls, monkeypatch):
@@ -75,3 +76,15 @@ def test_large_attachments_use_draft_and_upload_session(graph_calls, monkeypatch
         "/users/po@ges.com/messages/draft1/attachments/createUploadSession",
         "/users/po@ges.com/messages/draft1/send",
     ]
+
+
+def test_urgent_is_high_importance_and_prod_has_no_test_label(graph_calls, monkeypatch):
+    r, data = make_request(10)
+    r.is_urgent, r.urgent_reason = True, "Commercial Deadline"
+    monkeypatch.setattr(email.storage, "get", lambda c, p: data)
+    monkeypatch.setattr(email.get_settings(), "app_env", "prod")
+    email.send_submission_email(r)
+    msg = graph_calls[0][2]["json"]["message"]
+    assert msg["importance"] == "high"
+    assert msg["subject"].startswith("[PR-2026-0001] URGENT")
+    assert "TEST ENVIRONMENT" not in msg["body"]["content"]

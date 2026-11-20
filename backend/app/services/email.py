@@ -29,7 +29,16 @@ def money(amount: float) -> str:
 def subject_for(r: PurchaseRequest) -> str:
     parts = [f"[{r.request_number}]" + (" URGENT" if r.is_urgent else ""), r.supplier_name,
              f"Project {r.project_number}", f"CC {r.cost_center}", money(r.amount)]
-    return " – ".join(parts)
+    return _test_prefix() + " – ".join(parts)
+
+
+def _is_test() -> bool:
+    """Everything except production (APP_ENV=prod) sends clearly marked test emails."""
+    return get_settings().app_env != "prod"
+
+
+def _test_prefix() -> str:
+    return f"[TEST – {get_settings().app_env.upper()}] " if _is_test() else ""
 
 
 def body_for(r: PurchaseRequest) -> str:
@@ -59,8 +68,10 @@ def body_for(r: PurchaseRequest) -> str:
     files = "".join(f"<li>{html.escape(a.file_name)}</li>" for a in r.attachments)
     notes = (f'<h3 style="margin:18px 0 6px">Description / notes</h3>'
              f'<div style="white-space:pre-wrap;max-width:760px">{html.escape(r.description)}</div>') if r.description else ""
+    test_banner = ('<div style="background:#fff4ce;color:#5c4400;border:1px solid #e0c060;padding:10px 18px;font-weight:600">'
+                   'TEST ENVIRONMENT – this is a test requisition. Do not raise a PO.</div>') if _is_test() else ""
     return f"""<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#1b2430">
-<div style="background:#0b2341;color:#fff;padding:14px 18px;font-size:18px;font-weight:600">
+{test_banner}<div style="background:#0b2341;color:#fff;padding:14px 18px;font-size:18px;font-weight:600">
 New IT procurement requisition {html.escape(r.request_number)}</div>
 <table style="border-collapse:collapse;width:100%;max-width:760px;margin-top:12px">{trs}</table>
 {notes}<h3 style="margin:18px 0 6px">Attachments</h3><ul>{files}</ul>
@@ -109,6 +120,7 @@ def send_submission_email(r: PurchaseRequest) -> None:
     to = [a.strip() for a in (s.email_to or mb).split(",") if a.strip()]
     message = {
         "subject": subject,
+        "importance": "high" if r.is_urgent else "normal",
         "body": {"contentType": "HTML", "content": body},
         "toRecipients": [{"emailAddress": {"address": a}} for a in to],
         "ccRecipients": [{"emailAddress": {"address": r.requester_email, "name": r.requester_name}}],
