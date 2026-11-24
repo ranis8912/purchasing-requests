@@ -69,8 +69,10 @@ def test_validation(client):
     assert ok(amount=0) == 422
     assert ok(approver_email="someone.else@ges.com") == 422
     assert ok(po_recipients=["not-an-email"]) == 422
-    assert ok(additional_approver_email="not-an-email") == 422
-    assert ok(additional_approver_email="finance.lead@ges.com") == 201
+    # Non-Oracle approver: typed in, must be a valid email, not checked against the list
+    assert ok(approver_not_listed=True, approver_email="not-an-email") == 422
+    other = submit(client, ALICE, approver_not_listed=True, approver_email="finance.lead@ges.com").json()
+    assert other["approver_email"] == "finance.lead@ges.com" and other["approver_name"] == "Non-Oracle approver"
     assert ok(supplier_name="") == 422
 
 

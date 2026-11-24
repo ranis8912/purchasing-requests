@@ -13,7 +13,7 @@ class RequestIn(BaseModel):
     """Form fields. Sent as a JSON string in the multipart 'payload' part next to the PDF files."""
 
     approver_email: EmailStr
-    additional_approver_email: EmailStr | None = None
+    approver_not_listed: bool = False  # True: a typed-in non-Oracle approver, not checked against the list
     po_recipients: list[EmailStr] = Field(default=[], max_length=10)
 
     is_po_extension: bool
@@ -108,7 +108,6 @@ class RequestSummary(BaseModel):
 class RequestDetail(RequestSummary):
     approver_email: str
     approver_name: str
-    additional_approver_email: str | None
     po_recipients: str | None
     is_po_extension: bool
     previous_po: str | None

@@ -52,7 +52,6 @@ def body_for(r: PurchaseRequest) -> str:
         ("Urgent", f"Yes – {r.urgent_reason}" if r.is_urgent else None),
         ("Requester", f"{r.requester_name} <{r.requester_email}>"),
         ("Approver", f"{r.approver_name} <{r.approver_email}>"),
-        ("Additional approver", r.additional_approver_email),
         ("Additional PO recipients", r.po_recipients),
         ("Supplier", r.supplier_name),
         ("Service dates", f"{r.start_date} to {r.end_date}"),

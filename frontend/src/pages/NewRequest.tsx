@@ -14,6 +14,8 @@ import { EmailBadge, ErrorBox, PageLoader, Spinner, useMe, useToast } from "../c
 const MAX_AGREEMENT_FILES = 3;
 const MAX_SUPPORTING_FILES = 10;
 const MAX_MB = 20;
+// Extra choice at the end of the approver list; picking it shows a box to type the approver's email.
+const NOT_LISTED = { code: "Not in the list", label: "non-Oracle approver" };
 const HIGH_VALUE_AMOUNT = 250_000; // keep in step with HIGH_VALUE_AMOUNT in backend/app/models.py
 const EXTENSIONS = [".pdf", ".doc", ".docx", ".xls", ".xlsx"];
 const yesNo = z.boolean({ error: "Choose Yes or No" });
@@ -23,7 +25,7 @@ const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60_00
 
 const schema = z.object({
   approver_email: z.string().min(1, "Approver is required"),
-  additional_approver_email: z.union([z.literal(""), z.email("Enter a valid email address")]).optional(),
+  other_approver_email: z.string().trim().optional(),
   po_recipients: z.string().optional(),
   is_po_extension: yesNo,
   previous_po: z.string().trim().optional(),
@@ -44,6 +46,8 @@ const schema = z.object({
   description: z.string().trim().optional(),
 }).superRefine((v, ctx) => {
   const issue = (path: string, message: string) => ctx.addIssue({ code: "custom", path: [path], message });
+  if (v.approver_email === NOT_LISTED.code && !z.email().safeParse(v.other_approver_email).success)
+    issue("other_approver_email", "Enter the approver's email address");
   const bad = splitEmails(v.po_recipients).filter((e) => !z.email().safeParse(e).success);
   if (bad.length) issue("po_recipients", `Not a valid email: ${bad.join(", ")}`);
   if (v.is_po_extension && !v.previous_po) issue("previous_po", "Previous PO is required for an extension / add-on");
@@ -58,7 +62,7 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 const DEFAULTS: Partial<FormValues> = {
-  approver_email: "", additional_approver_email: "", po_recipients: "", previous_po: "", capital_project_number: "",
+  approver_email: "", other_approver_email: "", po_recipients: "", previous_po: "", capital_project_number: "",
   capital_cost_center: "", project_number: "", cost_center: "",
   supplier_name: "", start_date: "", end_date: "", signature_date: "", is_urgent: false, urgent_reason: "", description: "",
 };
@@ -200,16 +204,19 @@ export default function NewRequest() {
   const { register, control, handleSubmit, watch, reset, formState: { errors, isValid, isDirty } } = useForm<FormValues>({
     resolver: zodResolver(schema), defaultValues: DEFAULTS, mode: "onChange",
   });
-  const [isExtension, isCapital, signed, urgent, amount] =
-    watch(["is_po_extension", "is_capital_project", "agreement_signed", "is_urgent", "amount"]);
+  const [isExtension, isCapital, signed, urgent, amount, approver] =
+    watch(["is_po_extension", "is_capital_project", "agreement_signed", "is_urgent", "amount", "approver_email"]);
 
   const mutation = useMutation({
     mutationFn: (v: FormValues) => {
       const blankToNull = (s?: string) => (s ? s : null);
+      const { other_approver_email, ...rest } = v;
+      const notListed = v.approver_email === NOT_LISTED.code;
       return submitRequest({
-        ...v,
+        ...rest,
+        approver_email: notListed ? other_approver_email : v.approver_email,
+        approver_not_listed: notListed,
         po_recipients: splitEmails(v.po_recipients),
-        additional_approver_email: blankToNull(v.additional_approver_email),
         previous_po: blankToNull(v.previous_po), capital_project_number: blankToNull(v.capital_project_number),
         // Hidden answers are dropped so a stale value can't fail server validation.
         capital_cost_center: v.is_capital_project ? blankToNull(v.capital_cost_center) : null,
@@ -252,17 +259,20 @@ export default function NewRequest() {
           <Field label="Requester" htmlFor="requester">
             <input id="requester" className="input" value={me ? `${me.name} (${me.email})` : ""} disabled />
           </Field>
-          <Field label="Approver" required error={errors.approver_email} htmlFor="approver_email" hint="Someone with Oracle approval access">
+          <Field label="Approver" required error={errors.approver_email} htmlFor="approver_email" hint="Someone with Oracle approval access. Not listed? Choose 'Not in the list' at the end.">
             <Controller control={control} name="approver_email" render={({ field }) => (
-              <Combobox id="approver_email" options={lists.approvers} value={field.value} invalid={!!errors.approver_email}
+              <Combobox id="approver_email" options={[...lists.approvers, NOT_LISTED]} value={field.value} invalid={!!errors.approver_email}
                 onChange={(c) => { field.onChange(c); field.onBlur(); }} placeholder="Search by name or email" />
             )} />
           </Field>
-          <Field label="Additional approver" span error={errors.additional_approver_email} htmlFor="additional_approver_email"
-            hint="Optional. Email address of another approver, for example a non-IT approver.">
-            <input id="additional_approver_email" className="input" type="email" maxLength={320}
-              {...register("additional_approver_email")} placeholder="name@ges.com" />
-          </Field>
+          {approver === NOT_LISTED.code && (<>
+            <div className="field" />
+            <Field label="Non-Oracle approver email" required error={errors.other_approver_email} htmlFor="other_approver_email"
+              hint="The approver isn't in the Oracle list, for example a non-IT approver">
+              <input id="other_approver_email" className="input" type="email" maxLength={320}
+                {...register("other_approver_email")} placeholder="name@ges.com" />
+            </Field>
+          </>)}
           <Field label="Additional PO recipients" span error={errors.po_recipients} htmlFor="po_recipients"
             hint="Optional. Email addresses of people who should receive the final PO, separated by commas.">
             <input id="po_recipients" className="input" {...register("po_recipients")} placeholder="name@ges.com, other@ges.com" />

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 from ..auth import User, get_current_user, require_admin
 from ..config import get_settings
 from ..db import get_db
-from ..models import STATUSES, Attachment, PurchaseRequest, StatusHistory, utcnow
+from ..models import NON_ORACLE_APPROVER, STATUSES, Attachment, PurchaseRequest, StatusHistory, utcnow
 from ..schemas import NotesUpdate, RequestDetail, RequestIn, RequestSummary, StatusUpdate
 from ..services import email, lookups, recipients, storage
 
@@ -104,14 +104,18 @@ async def submit_request(
     if not agreement and not supporting:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Attach at least one document")
 
-    approver = lookups.find(db, "approvers", data.approver_email)
-    if not approver:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Approver is not on the approvers list")
+    if data.approver_not_listed:
+        approver_name = NON_ORACLE_APPROVER
+    else:
+        approver = lookups.find(db, "approvers", data.approver_email)
+        if not approver:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Approver is not on the approvers list")
+        approver_name = approver.label
 
     r = PurchaseRequest(
-        **data.model_dump(exclude={"po_recipients"}),
+        **data.model_dump(exclude={"po_recipients", "approver_not_listed"}),
         po_recipients=", ".join(data.po_recipients) or None,
-        approver_name=approver.label,
+        approver_name=approver_name,
         request_number=_next_number(db),
         requester_email=user.email,
         requester_name=user.name,

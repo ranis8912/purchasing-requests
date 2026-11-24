@@ -29,7 +29,6 @@ export type RequestSummary = {
 export type RequestDetail = RequestSummary & {
   approver_email: string;
   approver_name: string;
-  additional_approver_email: string | null;
   po_recipients: string | null;
   is_po_extension: boolean;
   previous_po: string | null;

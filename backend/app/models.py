@@ -16,6 +16,7 @@ OPEN_STATUSES = ["Pending Review", "In Review", "Info Needed"]
 EMAIL_STATUSES = ["Pending", "Sent", "Failed"]
 URGENT_REASONS = ["Late PO Request", "Commercial Deadline", "Past Due Payment(s)", "Project / Service Deadline",
                   "Business Critical/Continuity"]
+NON_ORACLE_APPROVER = "Non-Oracle approver"
 HIGH_VALUE_AMOUNT = 250_000  # USD; at or above this, legal/procurement review is asked and high-value CCs are notified
 
 
@@ -30,9 +31,8 @@ class PurchaseRequest(Base):
     requester_email: Mapped[str] = mapped_column(String(320), index=True)
     requester_name: Mapped[str] = mapped_column(String(200))
     approver_email: Mapped[str] = mapped_column(String(320))
-    approver_name: Mapped[str] = mapped_column(String(200))
+    approver_name: Mapped[str] = mapped_column(String(200))  # NON_ORACLE_APPROVER when typed in, not from the list
     po_recipients: Mapped[str | None] = mapped_column(Text)  # comma-separated emails
-    additional_approver_email: Mapped[str | None] = mapped_column(String(320))  # free text, e.g. a non-IT approver
 
     # Project costing. Numbers are text so leading zeroes survive.
     is_po_extension: Mapped[bool] = mapped_column(Boolean)

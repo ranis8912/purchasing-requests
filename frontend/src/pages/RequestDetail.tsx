@@ -193,7 +193,6 @@ export default function RequestDetail() {
               ["Requester", <>{r.requester_name}<div className="small muted">{r.requester_email}</div></>],
               ["Date submitted", dateTimePT(r.submitted_at)],
               ["Approver", <>{r.approver_name}<div className="small muted">{r.approver_email}</div></>],
-              ["Additional approver", r.additional_approver_email],
               ["Additional PO recipients", r.po_recipients],
             ]} />
           </Card>
