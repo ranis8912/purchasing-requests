@@ -38,10 +38,9 @@ class PurchaseRequest(Base):
     is_po_extension: Mapped[bool] = mapped_column(Boolean)
     previous_po: Mapped[str | None] = mapped_column(String(50))
     is_capital_project: Mapped[bool] = mapped_column(Boolean)
-    capital_project_number: Mapped[str | None] = mapped_column(String(50))
+    # For a capital project these hold the capital project number and capital task / cost center.
     project_number: Mapped[str] = mapped_column(String(9), index=True)
     cost_center: Mapped[str] = mapped_column(String(4))  # Task / Cost Center
-    capital_cost_center: Mapped[str | None] = mapped_column(String(4))  # Capital Task / Cost Center
 
     # Supplier requisition detail
     supplier_name: Mapped[str] = mapped_column(String(200), index=True)
