@@ -37,8 +37,8 @@ def make_request(size: int):
     return SimpleNamespace(
         request_number="PR-2026-0001", supplier_name="Acme", project_number="012345678", cost_center="0410",
         amount=1000.0, requester_email="a@ges.com", requester_name="A", approver_email="ap@ges.com",
-        approver_name="Approver", po_recipients=None, is_po_extension=False, previous_po=None,
-        is_capital_project=False, capital_project_number=None, start_date="2026-01-01", end_date="2026-12-31",
+        approver_name="Approver", additional_approver_email=None, po_recipients=None, is_po_extension=False, previous_po=None,
+        is_capital_project=False, capital_project_number=None, capital_cost_center=None, legal_review=None, start_date="2026-01-01", end_date="2026-12-31",
         agreement_signed=False, signature_date=None, is_urgent=False, urgent_reason=None,
         description="<b>x</b>", attachments=[att],
     ), b"%PDF-" + b"0" * size
@@ -108,3 +108,20 @@ def test_admin_cc_added_after_requester_without_duplicates(graph_calls, monkeypa
     msg = graph_calls[0][2]["json"]["message"]
     assert [t["emailAddress"]["address"] for t in msg["toRecipients"]] == ["po@ges.com"]
     assert [c["emailAddress"]["address"] for c in msg["ccRecipients"]] == ["a@ges.com", "boss@ges.com"]
+
+
+def test_po_email_goes_to_requester_and_po_recipients_only(graph_calls, monkeypatch):
+    r, data = make_request(10)
+    r.attachments.append(SimpleNamespace(file_name="PO-4500123.pdf", blob_path="x/po.pdf", category="po"))
+    r.po_number, r.po_recipients = "4500123", "ap@ges.com, A@ges.com, ap@ges.com"
+    monkeypatch.setattr(email.storage, "get", lambda c, p: data)
+    email.send_po_email(r, note="Thanks")
+    msg = graph_calls[0][2]["json"]["message"]
+    assert [t["emailAddress"]["address"] for t in msg["toRecipients"]] == ["a@ges.com"]
+    assert [c["emailAddress"]["address"] for c in msg["ccRecipients"]] == ["ap@ges.com"]  # not the approver
+    assert [a["name"] for a in msg["attachments"]] == ["PO-4500123.pdf"]  # PO only
+    assert "PO 4500123 issued" in msg["subject"] and "Thanks" in msg["body"]["content"]
+    # The submission email (e.g. a resend) never carries the PO
+    graph_calls.clear()
+    email.send_submission_email(r, to=["po@ges.com"])
+    assert [a["name"] for a in graph_calls[0][2]["json"]["message"]["attachments"]] == ["sow.pdf"]

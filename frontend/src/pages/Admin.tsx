@@ -12,14 +12,15 @@ function RecipientsCard() {
   const { data, error } = useQuery({ queryKey: ["recipients"], queryFn: getRecipients });
   const [to, setTo] = useState("");
   const [cc, setCc] = useState("");
-  useEffect(() => { if (data) { setTo(data.to); setCc(data.cc); } }, [data]);
+  const [highValueCc, setHighValueCc] = useState("");
+  useEffect(() => { if (data) { setTo(data.to); setCc(data.cc); setHighValueCc(data.high_value_cc); } }, [data]);
   const save = useMutation({
-    mutationFn: () => saveRecipients(to, cc),
+    mutationFn: () => saveRecipients(to, cc, highValueCc),
     onSuccess: (d) => { qc.setQueryData(["recipients"], d); toast("Email recipients saved"); },
     onError: (e: Error) => toast(e.message, true),
   });
   if (error) return <ErrorBox error={error} />;
-  const changed = !!data && (to !== data.to || cc !== data.cc);
+  const changed = !!data && (to !== data.to || cc !== data.cc || highValueCc !== data.high_value_cc);
 
   return (
     <Card title={<span style={{ display: "flex", alignItems: "center", gap: 8 }}><Mail size={18} aria-hidden /> Submission email recipients</span>}
@@ -32,6 +33,11 @@ function RecipientsCard() {
         <div className="field">
           <label htmlFor="rcpt_cc">CC</label>
           <input id="rcpt_cc" className="input" value={cc} onChange={(e) => setCc(e.target.value)} placeholder="Optional" />
+        </div>
+        <div className="field">
+          <label htmlFor="rcpt_hv_cc">CC for $250,000 or more</label>
+          <input id="rcpt_hv_cc" className="input" value={highValueCc} onChange={(e) => setHighValueCc(e.target.value)} placeholder="Optional" />
+          <span className="field-hint">Also copied when the total order form / SOW value is $250,000 or more.</span>
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 14 }}>

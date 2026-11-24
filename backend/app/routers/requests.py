@@ -44,11 +44,21 @@ def _get_visible(db: Session, number: str, user: User) -> PurchaseRequest:
 
 def _send_email(db: Session, r: PurchaseRequest) -> None:
     try:
-        email.send_submission_email(r, *recipients.resolve(db))
+        email.send_submission_email(r, *recipients.resolve(db, r.amount))
         r.email_status, r.email_error, r.email_sent_at = "Sent", None, utcnow()
     except Exception as exc:
         log.exception("Email failed for %s", r.request_number)
         r.email_status, r.email_error = "Failed", str(exc)[:1000]
+    db.commit()
+
+
+def _send_po_email(db: Session, r: PurchaseRequest, note: str | None = None) -> None:
+    try:
+        email.send_po_email(r, note)
+        r.po_email_status, r.po_email_error, r.po_email_sent_at = "Sent", None, utcnow()
+    except Exception as exc:
+        log.exception("PO email failed for %s", r.request_number)
+        r.po_email_status, r.po_email_error = "Failed", str(exc)[:1000]
     db.commit()
 
 
@@ -168,6 +178,8 @@ def update_status(number: str, body: StatusUpdate, admin: User = Depends(require
     if body.status not in STATUSES:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"Status must be one of {STATUSES}")
     r = _get_visible(db, number, admin)
+    if body.status == "PO Issued" and not r.po_number:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Use 'Issue final PO' to upload the PO first")
     if body.status != r.status or body.note:
         r.history.append(StatusHistory(old_status=r.status, new_status=body.status, changed_by=admin.email, note=body.note))
         r.status = body.status
@@ -188,4 +200,44 @@ def resend_email(number: str, admin: User = Depends(require_admin), db: Session 
     r = _get_visible(db, number, admin)
     log.info("Email resend for %s by %s", number, admin.email)
     _send_email(db, r)
+    return r
+
+
+@router.post("/{number}/po", response_model=RequestDetail)
+async def issue_po(
+    number: str,
+    po_number: str = Form(..., min_length=1, max_length=50),
+    note: str | None = Form(default=None, max_length=2000),
+    file: UploadFile = File(...),
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Purchasing uploads the final PO: stored, status -> PO Issued, emailed to the requester + PO recipients."""
+    r = _get_visible(db, number, admin)
+    if r.po_number:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"PO {r.po_number} was already issued for this requisition")
+    (name, content), = await _read_files([file], "Final PO", 1)
+    if storage.extension(name) != ".pdf":
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "The final PO must be a PDF")
+    path = f"{r.request_number}/{uuid.uuid4().hex}.pdf"
+    storage.put(get_settings().blob_attachments_container, path, content, storage.content_type(name))
+    r.attachments.append(Attachment(file_name=name, blob_path=path, size_bytes=len(content), category="po"))
+    note = (note or "").strip() or None
+    r.po_number, r.po_issued_at, r.po_issued_by = po_number.strip(), utcnow(), admin.email
+    r.history.append(StatusHistory(old_status=r.status, new_status="PO Issued", changed_by=admin.email,
+                                   note=f"PO {r.po_number} issued" + (f"\n{note}" if note else "")))
+    r.status = "PO Issued"
+    db.commit()
+    log.info("PO %s issued for %s by %s", r.po_number, number, admin.email)
+    _send_po_email(db, r, note)  # PO is already saved; a failed email can be resent
+    return r
+
+
+@router.post("/{number}/po/resend-email", response_model=RequestDetail)
+def resend_po_email(number: str, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+    r = _get_visible(db, number, admin)
+    if not r.po_number:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "No PO has been issued for this requisition")
+    log.info("PO email resend for %s by %s", number, admin.email)
+    _send_po_email(db, r)
     return r

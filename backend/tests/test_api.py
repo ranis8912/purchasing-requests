@@ -48,7 +48,13 @@ def test_validation(client):
     assert ok(is_po_extension=True) == 422
     assert ok(is_po_extension=True, previous_po="PO12345") == 201
     assert ok(is_capital_project=True) == 422
-    assert ok(is_capital_project=True, capital_project_number="CP-1") == 201
+    assert ok(is_capital_project=True, capital_project_number="CP-1") == 422  # needs capital task / cost center
+    assert ok(is_capital_project=True, capital_project_number="CP-1", capital_cost_center="12a4") == 422
+    assert ok(is_capital_project=True, capital_project_number="CP-1", capital_cost_center="0520") == 201
+    # Legal / procurement review: required at $250,000 and above
+    assert ok(amount=250000) == 422
+    assert ok(amount=250000, legal_review=False) == 201
+    assert ok(amount=249999.99) == 201
     signed = [("agreement_files", ("signed.pdf", PDF, "application/pdf"))]
     assert ok(agreement_signed=True, files=signed) == 422  # needs signature date
     assert ok(agreement_signed=True, signature_date=str(date.today() + timedelta(days=1)), files=signed) == 422
@@ -63,13 +69,17 @@ def test_validation(client):
     assert ok(amount=0) == 422
     assert ok(approver_email="someone.else@ges.com") == 422
     assert ok(po_recipients=["not-an-email"]) == 422
+    assert ok(additional_approver_email="not-an-email") == 422
+    assert ok(additional_approver_email="finance.lead@ges.com") == 201
     assert ok(supplier_name="") == 422
 
 
 def test_hidden_answers_are_cleared(client):
     body = submit(client, ALICE, is_po_extension=False, previous_po="PO999", agreement_signed=False,
-                  signature_date="2026-01-01", is_urgent=False, urgent_reason="Commercial Deadline").json()
+                  signature_date="2026-01-01", is_urgent=False, urgent_reason="Commercial Deadline",
+                  is_capital_project=False, capital_cost_center="0520", amount=1000, legal_review=True).json()
     assert body["previous_po"] is None and body["signature_date"] is None and body["urgent_reason"] is None
+    assert body["capital_cost_center"] is None and body["legal_review"] is None
 
 
 def test_requesters_only_see_their_own(client):
@@ -136,11 +146,15 @@ def test_admin_manages_email_recipients(client, monkeypatch):
     url = "/api/admin/recipients"
     assert client.put(url, headers=ADMIN, json={"to": "", "cc": ""}).status_code == 422  # To is required
     assert client.put(url, headers=ADMIN, json={"to": "a@ges.com, not-an-email", "cc": ""}).status_code == 422
-    saved = client.put(url, headers=ADMIN, json={"to": "po@ges.com, mary@ges.com; heather@ges.com", "cc": "boss@ges.com"}).json()
+    saved = client.put(url, headers=ADMIN, json={"to": "po@ges.com, mary@ges.com; heather@ges.com", "cc": "boss@ges.com",
+                                                 "high_value_cc": "cio@ges.com, Boss@ges.com"}).json()
     assert saved["to"] == "po@ges.com, mary@ges.com, heather@ges.com" and saved["source"] == "admin"
+    assert saved["high_value_cc"] == "cio@ges.com, Boss@ges.com"
     assert saved["updated_by"] == "po.admin@ges.com"
     submit(client, ALICE)
     assert sent == {"to": ["po@ges.com", "mary@ges.com", "heather@ges.com"], "cc": ["boss@ges.com"]}
+    submit(client, ALICE, amount=250000, legal_review=True)  # high value: CC added, no duplicates
+    assert sent["cc"] == ["boss@ges.com", "cio@ges.com"]
 
 
 def test_agreement_and_supporting_sections(client):
@@ -152,3 +166,32 @@ def test_agreement_and_supporting_sections(client):
     assert submit(client, ALICE, files=[f("agreement_files", "draft.pdf")]).status_code == 201
     too_many = [f("agreement_files", f"a{i}.pdf") for i in range(4)]
     assert submit(client, ALICE, files=too_many).status_code == 422
+
+
+def test_purchasing_issues_final_po(client, monkeypatch):
+    from app.services import email
+    sent = []
+    monkeypatch.setattr(email, "send_po_email", lambda r, note=None: sent.append((r.po_number, note)))
+    n = submit(client, ALICE, po_recipients=["ap@ges.com"]).json()["request_number"]
+    url = f"/api/requests/{n}/po"
+    po = lambda **kw: {"file": kw.pop("file", ("PO-4500123.pdf", PDF, "application/pdf"))}  # noqa: E731
+    data = {"po_number": "4500123", "note": "Send invoices to AP."}
+    # Status can't be set to PO Issued by hand, before a PO exists
+    assert client.patch(f"/api/requests/{n}/status", headers=ADMIN, json={"status": "PO Issued"}).status_code == 422
+    assert client.post(url, headers=ALICE, data=data, files=po()).status_code == 403
+    assert client.post(url, headers=ADMIN, data=data, files=po(file=("po.docx", b"PK\x03\x04", "application/msword"))).status_code == 422
+    assert client.post(url, headers=ADMIN, data={"po_number": ""}, files=po()).status_code == 422
+    r = client.post(url, headers=ADMIN, data=data, files=po())
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "PO Issued" and body["po_number"] == "4500123" and body["po_email_status"] == "Sent"
+    assert body["po_issued_by"] == "po.admin@ges.com" and body["history"][-1]["new_status"] == "PO Issued"
+    assert sent == [("4500123", "Send invoices to AP.")]
+    # The requester sees and can open the PO
+    mine = client.get(f"/api/requests/{n}", headers=ALICE).json()
+    att = next(a for a in mine["attachments"] if a["category"] == "po")
+    assert client.get(f"/api/requests/{n}/attachments/{att['id']}", headers=ALICE).content.startswith(b"%PDF-")
+    # Only one PO per requisition; resend works
+    assert client.post(url, headers=ADMIN, data=data, files=po()).status_code == 409
+    assert client.post(f"{url}/resend-email", headers=ADMIN).json()["po_email_status"] == "Sent"
+    assert len(sent) == 2

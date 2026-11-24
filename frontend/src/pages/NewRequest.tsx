@@ -14,6 +14,7 @@ import { EmailBadge, ErrorBox, PageLoader, Spinner, useMe, useToast } from "../c
 const MAX_AGREEMENT_FILES = 3;
 const MAX_SUPPORTING_FILES = 10;
 const MAX_MB = 20;
+const HIGH_VALUE_AMOUNT = 250_000; // keep in step with HIGH_VALUE_AMOUNT in backend/app/models.py
 const EXTENSIONS = [".pdf", ".doc", ".docx", ".xls", ".xlsx"];
 const yesNo = z.boolean({ error: "Choose Yes or No" });
 const splitEmails = (s?: string) => (s ?? "").split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean);
@@ -22,11 +23,13 @@ const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60_00
 
 const schema = z.object({
   approver_email: z.string().min(1, "Approver is required"),
+  additional_approver_email: z.union([z.literal(""), z.email("Enter a valid email address")]).optional(),
   po_recipients: z.string().optional(),
   is_po_extension: yesNo,
   previous_po: z.string().trim().optional(),
   is_capital_project: yesNo,
   capital_project_number: z.string().trim().optional(),
+  capital_cost_center: z.string().trim().optional(),
   project_number: z.string().trim().regex(/^\d{9}$/, "Project number must be exactly 9 digits"),
   cost_center: z.string().trim().regex(/^\d{4}$/, "Task / cost center must be exactly 4 digits"),
   supplier_name: z.string().trim().min(2, "Supplier name is required"),
@@ -35,6 +38,7 @@ const schema = z.object({
   agreement_signed: yesNo,
   signature_date: z.string().optional(),
   amount: z.number({ error: "Enter the total value" }).positive("Value must be more than $0"),
+  legal_review: z.boolean().optional(),
   is_urgent: z.boolean(),
   urgent_reason: z.string().optional(),
   description: z.string().trim().optional(),
@@ -44,6 +48,8 @@ const schema = z.object({
   if (bad.length) issue("po_recipients", `Not a valid email: ${bad.join(", ")}`);
   if (v.is_po_extension && !v.previous_po) issue("previous_po", "Previous PO is required for an extension / add-on");
   if (v.is_capital_project && !v.capital_project_number) issue("capital_project_number", "Capital project number is required");
+  if (v.is_capital_project && !/^\d{4}$/.test(v.capital_cost_center ?? "")) issue("capital_cost_center", "Capital task / cost center must be exactly 4 digits");
+  if (v.amount >= HIGH_VALUE_AMOUNT && v.legal_review === undefined) issue("legal_review", "Choose Yes or No");
   if (v.start_date && v.end_date && v.end_date < v.start_date) issue("end_date", "End date can't be before the start date");
   if (v.agreement_signed && !v.signature_date) issue("signature_date", "Date of signature is required");
   if (v.agreement_signed && v.signature_date && v.signature_date > today()) issue("signature_date", "Date of signature can't be in the future");
@@ -52,7 +58,8 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 const DEFAULTS: Partial<FormValues> = {
-  approver_email: "", po_recipients: "", previous_po: "", capital_project_number: "", project_number: "", cost_center: "",
+  approver_email: "", additional_approver_email: "", po_recipients: "", previous_po: "", capital_project_number: "",
+  capital_cost_center: "", project_number: "", cost_center: "",
   supplier_name: "", start_date: "", end_date: "", signature_date: "", is_urgent: false, urgent_reason: "", description: "",
 };
 
@@ -202,7 +209,11 @@ export default function NewRequest() {
       return submitRequest({
         ...v,
         po_recipients: splitEmails(v.po_recipients),
+        additional_approver_email: blankToNull(v.additional_approver_email),
         previous_po: blankToNull(v.previous_po), capital_project_number: blankToNull(v.capital_project_number),
+        // Hidden answers are dropped so a stale value can't fail server validation.
+        capital_cost_center: v.is_capital_project ? blankToNull(v.capital_cost_center) : null,
+        legal_review: v.amount >= HIGH_VALUE_AMOUNT ? v.legal_review ?? null : null,
         signature_date: blankToNull(v.signature_date), urgent_reason: blankToNull(v.urgent_reason),
         description: blankToNull(v.description),
       }, agreementFiles, supportingFiles);
@@ -247,38 +258,18 @@ export default function NewRequest() {
                 onChange={(c) => { field.onChange(c); field.onBlur(); }} placeholder="Search by name or email" />
             )} />
           </Field>
+          <Field label="Additional approver" span error={errors.additional_approver_email} htmlFor="additional_approver_email"
+            hint="Optional. Email address of another approver, for example a non-IT approver.">
+            <input id="additional_approver_email" className="input" type="email" maxLength={320}
+              {...register("additional_approver_email")} placeholder="name@ges.com" />
+          </Field>
           <Field label="Additional PO recipients" span error={errors.po_recipients} htmlFor="po_recipients"
             hint="Optional. Email addresses of people who should receive the final PO, separated by commas.">
             <input id="po_recipients" className="input" {...register("po_recipients")} placeholder="name@ges.com, other@ges.com" />
           </Field>
         </Section>
 
-        <Section step={2} title="Project costing" intro="Where the cost is charged. Project and task numbers keep their leading zeroes.">
-          <Field label="PO extension / add-on" required error={errors.is_po_extension}>
-            <YesNo control={control} name="is_po_extension" label="PO extension / add-on" />
-          </Field>
-          {isExtension ? (
-            <Field label="Previous PO" required error={errors.previous_po} htmlFor="previous_po">
-              <input id="previous_po" className="input" maxLength={50} {...register("previous_po")} />
-            </Field>
-          ) : <div className="field" />}
-          <Field label="Capital project" required error={errors.is_capital_project}>
-            <YesNo control={control} name="is_capital_project" label="Capital project" />
-          </Field>
-          {isCapital ? (
-            <Field label="Capital project number" required error={errors.capital_project_number} htmlFor="capital_project_number">
-              <input id="capital_project_number" className="input" maxLength={50} {...register("capital_project_number")} />
-            </Field>
-          ) : <div className="field" />}
-          <Field label="Project number" required error={errors.project_number} htmlFor="project_number" hint="Exactly 9 digits">
-            <input id="project_number" className="input mono" inputMode="numeric" maxLength={9} {...register("project_number")} />
-          </Field>
-          <Field label="Task / cost center" required error={errors.cost_center} htmlFor="cost_center" hint="Exactly 4 digits">
-            <input id="cost_center" className="input mono" inputMode="numeric" maxLength={4} {...register("cost_center")} />
-          </Field>
-        </Section>
-
-        <Section step={3} title="SOW / quote / order form" intro="The agreement details and the documents.">
+        <Section step={2} title="Supplier requisition detail" intro="The supplier, the SOW / quote / order form, and the documents.">
           <Field label="Supplier name" required span error={errors.supplier_name} htmlFor="supplier_name">
             <input id="supplier_name" className="input" maxLength={200} {...register("supplier_name")} />
           </Field>
@@ -314,7 +305,17 @@ export default function NewRequest() {
             hint={amount > 0 ? `${money(amount)} · must match the supporting documents` : "Must match the supporting documents"}>
             <input id="amount" type="number" min="0" step="0.01" inputMode="decimal" className="input" {...register("amount", { valueAsNumber: true })} />
           </Field>
-          <div className="field" />
+          {amount >= HIGH_VALUE_AMOUNT ? (
+            <Field label="Legal / procurement review" required error={errors.legal_review} htmlFor="legal_review"
+              hint="Required for $250,000 or more">
+              <Controller control={control} name="legal_review" render={({ field }) => (
+                <select id="legal_review" className="select" value={field.value === undefined ? "" : field.value ? "yes" : "no"}
+                  onChange={(e) => field.onChange(e.target.value === "" ? undefined : e.target.value === "yes")} onBlur={field.onBlur}>
+                  <option value="">Select…</option><option value="yes">Yes</option><option value="no">No</option>
+                </select>
+              )} />
+            </Field>
+          ) : <div className="field" />}
           <FileDrop id="agreement" label="Fully Executed Agreement" required={!!signed} max={MAX_AGREEMENT_FILES}
             hint={signed ? "The signed SOW, quote or order form" : "Required once the agreement is signed"}
             files={agreementFiles} onChange={setAgreementFiles}
@@ -323,6 +324,37 @@ export default function NewRequest() {
             hint="Optional: quotes, unsigned drafts, backup"
             files={supportingFiles} onChange={setSupportingFiles}
             error={!signed && docsMissing && touchedDocs ? docsError : undefined} />
+        </Section>
+
+        <Section step={3} title="Project costing" intro="Where the cost is charged. Project and task numbers keep their leading zeroes.">
+          <Field label="PO extension / add-on" required error={errors.is_po_extension}>
+            <YesNo control={control} name="is_po_extension" label="PO extension / add-on" />
+          </Field>
+          {isExtension ? (
+            <Field label="Previous PO" required error={errors.previous_po} htmlFor="previous_po">
+              <input id="previous_po" className="input" maxLength={50} {...register("previous_po")} />
+            </Field>
+          ) : <div className="field" />}
+          <Field label="Capital project" required error={errors.is_capital_project}>
+            <YesNo control={control} name="is_capital_project" label="Capital project" />
+          </Field>
+          {isCapital ? (
+            <Field label="Capital project number" required error={errors.capital_project_number} htmlFor="capital_project_number">
+              <input id="capital_project_number" className="input" maxLength={50} {...register("capital_project_number")} />
+            </Field>
+          ) : <div className="field" />}
+          {isCapital && (<>
+            <Field label="Capital task / cost center" required error={errors.capital_cost_center} htmlFor="capital_cost_center" hint="Exactly 4 digits">
+              <input id="capital_cost_center" className="input mono" inputMode="numeric" maxLength={4} {...register("capital_cost_center")} />
+            </Field>
+            <div className="field" />
+          </>)}
+          <Field label="Project number" required error={errors.project_number} htmlFor="project_number" hint="Exactly 9 digits">
+            <input id="project_number" className="input mono" inputMode="numeric" maxLength={9} {...register("project_number")} />
+          </Field>
+          <Field label="Task / cost center" required error={errors.cost_center} htmlFor="cost_center" hint="Exactly 4 digits">
+            <input id="cost_center" className="input mono" inputMode="numeric" maxLength={4} {...register("cost_center")} />
+          </Field>
         </Section>
 
         <Section step={4} title="Urgency & notes" intro="Mark the request urgent only when there's a real deadline or risk.">

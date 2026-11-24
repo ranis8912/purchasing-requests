@@ -11,11 +11,12 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-STATUSES = ["Pending Review", "In Review", "Info Needed", "PO/Req Created", "Contract Signed", "Closed", "Rejected"]
+STATUSES = ["Pending Review", "In Review", "Info Needed", "PO/Req Created", "PO Issued", "Contract Signed", "Closed", "Rejected"]
 OPEN_STATUSES = ["Pending Review", "In Review", "Info Needed"]
 EMAIL_STATUSES = ["Pending", "Sent", "Failed"]
 URGENT_REASONS = ["Late PO Request", "Commercial Deadline", "Past Due Payment(s)", "Project / Service Deadline",
                   "Business Critical/Continuity"]
+HIGH_VALUE_AMOUNT = 250_000  # USD; at or above this, legal/procurement review is asked and high-value CCs are notified
 
 
 class PurchaseRequest(Base):
@@ -31,6 +32,7 @@ class PurchaseRequest(Base):
     approver_email: Mapped[str] = mapped_column(String(320))
     approver_name: Mapped[str] = mapped_column(String(200))
     po_recipients: Mapped[str | None] = mapped_column(Text)  # comma-separated emails
+    additional_approver_email: Mapped[str | None] = mapped_column(String(320))  # free text, e.g. a non-IT approver
 
     # Project costing. Numbers are text so leading zeroes survive.
     is_po_extension: Mapped[bool] = mapped_column(Boolean)
@@ -39,14 +41,16 @@ class PurchaseRequest(Base):
     capital_project_number: Mapped[str | None] = mapped_column(String(50))
     project_number: Mapped[str] = mapped_column(String(9), index=True)
     cost_center: Mapped[str] = mapped_column(String(4))  # Task / Cost Center
+    capital_cost_center: Mapped[str | None] = mapped_column(String(4))  # Capital Task / Cost Center
 
-    # SOW / quote / order form
+    # Supplier requisition detail
     supplier_name: Mapped[str] = mapped_column(String(200), index=True)
     start_date: Mapped[date] = mapped_column(Date)
     end_date: Mapped[date] = mapped_column(Date)
     agreement_signed: Mapped[bool] = mapped_column(Boolean)
     signature_date: Mapped[date | None] = mapped_column(Date)
     amount: Mapped[float] = mapped_column(Float)  # USD
+    legal_review: Mapped[bool | None] = mapped_column(Boolean)  # asked only at or above HIGH_VALUE_AMOUNT
 
     # Urgency + notes
     is_urgent: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -58,6 +62,14 @@ class PurchaseRequest(Base):
     email_error: Mapped[str | None] = mapped_column(Text)
     email_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     admin_notes: Mapped[str | None] = mapped_column(Text)
+
+    # Final PO, issued by Purchasing in the portal. One per requisition; change orders are new submissions.
+    po_number: Mapped[str | None] = mapped_column(String(50))
+    po_issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    po_issued_by: Mapped[str | None] = mapped_column(String(320))
+    po_email_status: Mapped[str | None] = mapped_column(String(10))  # Sent | Failed, once a PO is issued
+    po_email_error: Mapped[str | None] = mapped_column(Text)
+    po_email_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     attachments: Mapped[list["Attachment"]] = relationship(
@@ -76,7 +88,7 @@ class Attachment(Base):
     file_name: Mapped[str] = mapped_column(String(255))
     blob_path: Mapped[str] = mapped_column(String(400))
     size_bytes: Mapped[int] = mapped_column(Integer)
-    category: Mapped[str] = mapped_column(String(20), default="supporting")  # agreement | supporting
+    category: Mapped[str] = mapped_column(String(20), default="supporting")  # agreement | supporting | po
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     request: Mapped[PurchaseRequest] = relationship(back_populates="attachments")

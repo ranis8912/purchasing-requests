@@ -61,4 +61,4 @@ def get_recipients(_: User = Depends(require_admin), db: Session = Depends(get_d
 
 @router.put("/admin/recipients", tags=["admin"])
 def set_recipients(body: RecipientsUpdate, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
-    return recipients.save(db, [str(a) for a in body.to], [str(a) for a in body.cc], admin.email)
+    return recipients.save(db, [str(a) for a in body.to], [str(a) for a in body.cc], [str(a) for a in body.high_value_cc], admin.email)

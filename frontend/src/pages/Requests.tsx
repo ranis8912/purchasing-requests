@@ -7,7 +7,7 @@ import { datePT, day, money } from "../format";
 import { CapitalTag, EmailBadge, Empty, ErrorBox, StatusBadge, UrgentTag, useMe } from "../components/ui";
 
 const OPEN = ["Pending Review", "In Review", "Info Needed"];
-const STATUSES = ["Pending Review", "In Review", "Info Needed", "PO/Req Created", "Contract Signed", "Closed", "Rejected"];
+const STATUSES = ["Pending Review", "In Review", "Info Needed", "PO/Req Created", "PO Issued", "Contract Signed", "Closed", "Rejected"];
 type SortKey = "request_number" | "submitted_at" | "supplier_name" | "amount" | "status" | "start_date";
 
 export default function Requests() {
@@ -122,7 +122,7 @@ export default function Requests() {
                       <td className="small"><span className="mono">{r.project_number}</span> · <span className="mono">{r.cost_center}</span></td>
                       {scope === "all" && <td>{r.requester_name}</td>}
                       <td className="num">{money(r.amount)}<div><CapitalTag capital={r.is_capital_project} /></div></td>
-                      <td><StatusBadge status={r.status} />{me?.is_admin && r.email_status === "Failed" && <div style={{ marginTop: 4 }}><EmailBadge status="Failed" /></div>}</td>
+                      <td><StatusBadge status={r.status} />{r.po_number && <div className="small mono" style={{ marginTop: 4 }}>PO {r.po_number}</div>}{me?.is_admin && r.email_status === "Failed" && <div style={{ marginTop: 4 }}><EmailBadge status="Failed" /></div>}</td>
                       <td className="muted">{day(r.start_date)}</td>
                       <td className="muted">{datePT(r.submitted_at)}</td>
                     </tr>

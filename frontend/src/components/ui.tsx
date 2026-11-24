@@ -16,6 +16,7 @@ const STATUS: Record<string, { cls: string; icon: LucideIcon }> = {
   "In Review": { cls: "badge-info", icon: Search },
   "Info Needed": { cls: "badge-warn", icon: HelpCircle },
   "PO/Req Created": { cls: "badge-ok", icon: FileCheck2 },
+  "PO Issued": { cls: "badge-ok", icon: FileCheck2 },
   "Contract Signed": { cls: "badge-ok", icon: FileCheck2 },
   Closed: { cls: "badge-neutral", icon: CheckCircle2 },
   Rejected: { cls: "badge-danger", icon: XCircle },

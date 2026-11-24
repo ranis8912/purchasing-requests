@@ -1,12 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, ChevronLeft, ExternalLink, FileText, Mail, RefreshCw, Save } from "lucide-react";
-import { attachmentUrl, getRequest, resendEmail, updateNotes, updateStatus, type RequestDetail as Detail } from "../api";
+import { AlertCircle, ChevronLeft, ExternalLink, FileCheck2, FileText, Mail, RefreshCw, Save } from "lucide-react";
+import { attachmentUrl, getRequest, issuePo, resendEmail, resendPoEmail, updateNotes, updateStatus, type RequestDetail as Detail } from "../api";
 import { dateTimePT, day, fileSize, money } from "../format";
 import { CapitalTag, Card, EmailBadge, Empty, ErrorBox, PageLoader, Spinner, StatusBadge, UrgentTag, useMe, useToast } from "../components/ui";
 
-const STATUSES = ["Pending Review", "In Review", "Info Needed", "PO/Req Created", "Contract Signed", "Closed", "Rejected"];
+const STATUSES = ["Pending Review", "In Review", "Info Needed", "PO/Req Created", "PO Issued", "Contract Signed", "Closed", "Rejected"];
 const yesNo = (b: boolean) => (b ? "Yes" : "No");
 
 function Dl({ items }: { items: [string, ReactNode][] }) {
@@ -14,6 +14,63 @@ function Dl({ items }: { items: [string, ReactNode][] }) {
     <dl className="dl">
       {items.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v === null || v === undefined || v === "" ? "—" : v}</dd></div>)}
     </dl>
+  );
+}
+
+/** Purchasing uploads the final PO once; it's emailed to the requester and the Additional PO recipients. */
+function IssuePo({ r }: { r: Detail }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [poNumber, setPoNumber] = useState("");
+  const [note, setNote] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const tooBig = !!file && file.size > 20 * 1024 * 1024;
+  const notPdf = !!file && !file.name.toLowerCase().endsWith(".pdf");
+  const done = (msg: string) => (u: Detail) => { qc.setQueryData(["request", r.request_number], u); qc.invalidateQueries({ queryKey: ["requests"] }); toast(msg); };
+  const issue = useMutation({
+    mutationFn: () => issuePo(r.request_number, poNumber.trim(), note, file!),
+    onSuccess: (u) => done(u.po_email_status === "Sent" ? "PO issued and emailed" : "PO issued, but the email failed")(u),
+    onError: (e: Error) => toast(e.message, true),
+  });
+  const resend = useMutation({
+    mutationFn: () => resendPoEmail(r.request_number),
+    onSuccess: (u) => done(u.po_email_status === "Sent" ? "PO email sent" : "PO email failed again")(u),
+    onError: (e: Error) => toast(e.message, true),
+  });
+
+  if (r.po_number) {
+    return (
+      <Card title="Final PO email" subtitle="Only Purchasing admins see this panel">
+        {r.po_email_status === "Failed" && <div className="alert alert-danger" style={{ marginBottom: 12 }}><AlertCircle size={18} aria-hidden /><div>The PO email failed: {r.po_email_error}</div></div>}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <span className="small muted">{r.po_email_sent_at ? `Emailed ${dateTimePT(r.po_email_sent_at)}` : "Not emailed yet"}</span>
+          <button type="button" className="btn btn-ghost btn-sm" disabled={resend.isPending} onClick={() => resend.mutate()}>
+            {resend.isPending ? <Spinner dark /> : <RefreshCw size={15} aria-hidden />} Resend PO email
+          </button>
+        </div>
+      </Card>
+    );
+  }
+  return (
+    <Card title="Issue final PO" subtitle="Emails the PO to the requester and the Additional PO recipients, and sets the status to PO Issued. One PO per requisition.">
+      <div className="field">
+        <label htmlFor="po_number">PO number<span className="req" aria-hidden>*</span></label>
+        <input id="po_number" className="input mono" maxLength={50} value={poNumber} onChange={(e) => setPoNumber(e.target.value)} />
+      </div>
+      <div className="field" style={{ marginTop: 12 }}>
+        <label htmlFor="po_file">PO PDF<span className="req" aria-hidden>*</span></label>
+        <input id="po_file" type="file" accept=".pdf" className="input" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        {(tooBig || notPdf) && <span className="field-error" role="alert">{notPdf ? "The PO must be a PDF." : "The PO must be 20 MB or less."}</span>}
+      </div>
+      <div className="field" style={{ marginTop: 12 }}>
+        <label htmlFor="po_note">Note to the requester</label>
+        <textarea id="po_note" className="textarea" style={{ minHeight: 70 }} maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional" />
+      </div>
+      <button type="button" className="btn btn-primary" style={{ marginTop: 12, width: "100%" }}
+        disabled={issue.isPending || !poNumber.trim() || !file || tooBig || notPdf} onClick={() => issue.mutate()}>
+        {issue.isPending ? <Spinner /> : <FileCheck2 size={16} aria-hidden />} Issue PO and email it
+      </button>
+    </Card>
   );
 }
 
@@ -43,7 +100,7 @@ function AdminPanel({ r }: { r: Detail }) {
       <div className="field">
         <label htmlFor="status">Status</label>
         <select id="status" className="select" value={status} onChange={(e) => setStatus(e.target.value)}>
-          {STATUSES.map((s) => <option key={s}>{s}</option>)}
+          {STATUSES.filter((s) => s !== "PO Issued" || r.po_number).map((s) => <option key={s}>{s}</option>)}
         </select>
       </div>
       <div className="field" style={{ marginTop: 12 }}>
@@ -136,28 +193,45 @@ export default function RequestDetail() {
               ["Requester", <>{r.requester_name}<div className="small muted">{r.requester_email}</div></>],
               ["Date submitted", dateTimePT(r.submitted_at)],
               ["Approver", <>{r.approver_name}<div className="small muted">{r.approver_email}</div></>],
+              ["Additional approver", r.additional_approver_email],
               ["Additional PO recipients", r.po_recipients],
+            ]} />
+          </Card>
+          <Card title="Supplier requisition detail">
+            <Dl items={[
+              ["Supplier", r.supplier_name], ["Total value", money(r.amount)],
+              ["Service start", day(r.start_date)], ["Service end", day(r.end_date)],
+              ["Agreement signed", yesNo(r.agreement_signed)], ["Date of signature", day(r.signature_date)],
+              ["Legal / procurement review", r.legal_review === null ? null : yesNo(r.legal_review)],
             ]} />
           </Card>
           <Card title="Project costing">
             <Dl items={[
               ["PO extension / add-on", yesNo(r.is_po_extension)], ["Previous PO", r.previous_po],
               ["Capital project", yesNo(r.is_capital_project)], ["Capital project number", r.capital_project_number],
+              ["Capital task / cost center", r.capital_cost_center && <span className="mono">{r.capital_cost_center}</span>],
               ["Project number", <span className="mono">{r.project_number}</span>],
               ["Task / cost center", <span className="mono">{r.cost_center}</span>],
-            ]} />
-          </Card>
-          <Card title="SOW / quote / order form">
-            <Dl items={[
-              ["Supplier", r.supplier_name], ["Total value", money(r.amount)],
-              ["Service start", day(r.start_date)], ["Service end", day(r.end_date)],
-              ["Agreement signed", yesNo(r.agreement_signed)], ["Date of signature", day(r.signature_date)],
             ]} />
           </Card>
           {r.description && <Card title="Description / notes"><div className="prose">{r.description}</div></Card>}
         </div>
 
         <div className="grid" style={{ alignContent: "start" }}>
+          {r.po_number && (
+            <Card title="Purchase order" subtitle={`PO ${r.po_number}${r.po_issued_at ? ` · issued ${dateTimePT(r.po_issued_at)}` : ""}`}>
+              <ul className="files" style={{ marginTop: 0 }}>
+                {r.attachments.filter((a) => a.category === "po").map((a) => (
+                  <li key={a.id} className="file">
+                    <FileText size={20} className="file__icon" aria-hidden />
+                    <a className="file__name" href={attachmentUrl(r.request_number, a.id)} target="_blank" rel="noreferrer">{a.file_name}</a>
+                    <span className="file__size">{fileSize(a.size_bytes)}</span>
+                    <ExternalLink size={14} className="muted" aria-hidden />
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
           {([["agreement", "Fully executed agreement"], ["supporting", "Supporting documents"]] as const).map(([cat, title]) => {
             const docs = r.attachments.filter((a) => a.category === cat);
             return (
@@ -178,6 +252,7 @@ export default function RequestDetail() {
             );
           })}
 
+          {me?.is_admin && <IssuePo r={r} />}
           {me?.is_admin && <AdminPanel r={r} />}
 
           <Card title="Timeline">

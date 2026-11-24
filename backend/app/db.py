@@ -55,7 +55,18 @@ def init_db() -> None:
 
 def _add_missing_columns() -> None:
     """create_all only creates missing tables. Add columns introduced after a table was created."""
-    added = {("attachments", "category"): "VARCHAR(20) NOT NULL DEFAULT 'supporting'"}
+    added = {
+        ("attachments", "category"): "VARCHAR(20) NOT NULL DEFAULT 'supporting'",
+        ("requests", "additional_approver_email"): "VARCHAR(320)",
+        ("requests", "capital_cost_center"): "VARCHAR(4)",
+        ("requests", "legal_review"): "BOOLEAN",
+        ("requests", "po_number"): "VARCHAR(50)",
+        ("requests", "po_issued_at"): "DATETIME",
+        ("requests", "po_issued_by"): "VARCHAR(320)",
+        ("requests", "po_email_status"): "VARCHAR(10)",
+        ("requests", "po_email_error"): "TEXT",
+        ("requests", "po_email_sent_at"): "DATETIME",
+    }
     with engine.begin() as conn:
         for (table, column), ddl in added.items():
             cols = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
