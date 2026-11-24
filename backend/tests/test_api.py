@@ -48,9 +48,11 @@ def test_validation(client):
     assert ok(is_po_extension=True) == 422
     assert ok(is_po_extension=True, previous_po="PO12345") == 201
     assert ok(is_capital_project=True) == 422
-    assert ok(is_capital_project=True, capital_project_number="CP-1") == 422  # needs capital task / cost center
-    assert ok(is_capital_project=True, capital_project_number="CP-1", capital_cost_center="12a4") == 422
-    assert ok(is_capital_project=True, capital_project_number="CP-1", capital_cost_center="0520") == 201
+    for bad in ["CP-1", "12345678", "1234567890"]:  # capital project number: exactly 9 digits
+        assert ok(is_capital_project=True, capital_project_number=bad, capital_cost_center="0520") == 422, bad
+    assert ok(is_capital_project=True, capital_project_number="098765432") == 422  # needs capital task / cost center
+    assert ok(is_capital_project=True, capital_project_number="098765432", capital_cost_center="12a4") == 422
+    assert ok(is_capital_project=True, capital_project_number="098765432", capital_cost_center="0520") == 201
     # Legal / procurement review: required at $250,000 and above
     assert ok(amount=250000) == 422
     assert ok(amount=250000, legal_review=False) == 201

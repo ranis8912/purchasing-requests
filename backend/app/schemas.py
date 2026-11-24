@@ -19,7 +19,7 @@ class RequestIn(BaseModel):
     is_po_extension: bool
     previous_po: str | None = Field(default=None, max_length=50)
     is_capital_project: bool
-    capital_project_number: str | None = Field(default=None, max_length=50)
+    capital_project_number: str | None = Field(default=None, pattern=r"^\d{9}$")
     project_number: str = Field(pattern=r"^\d{9}$")
     cost_center: str = Field(pattern=r"^\d{4}$")
     capital_cost_center: str | None = Field(default=None, pattern=r"^\d{4}$")
